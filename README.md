@@ -116,7 +116,7 @@ optimization reduces a storage footprint if application uses persistent allocato
 
 ## Getting started
 
-The latest version of the library is available at `master` branch. All development, including new features and bug fixes, take place on the `master` branch using forking and pull requests as described in contribution guidelines. Here is minimal example (also available in playground):
+The latest version of the library is available at `master` branch. All development, including new features and bug fixes, take place on the `master` branch using forking and pull requests as described in contribution guidelines. Here is minimal example (also available in [playground](https://play.golang.org/p/RccgzbBqy9P)):
 
 ```go
 package main
@@ -126,7 +126,16 @@ import (
 )
 
 func main() {
-  // ...
+  // Use default ID allocator
+  a := guid.Seq.G()
+  b := guid.Seq.G()
+  fmt.Printf("%s < %s is %v\n", a.Chars(), b.Chars(), a.Lt(b))
+	
+  // Use custom ID allocator
+  seq := guid.New(guid.Allocator(0xffffffff))
+  c := seq.G()
+  d := seq.G()
+  fmt.Printf("%s < %s is %v\n", c.Chars(), d.Chars(), c.Lt(d))
 }
 ```
 
