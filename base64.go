@@ -23,16 +23,16 @@ var alphabet []rune = []rune{
 	'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
 }
 
-func encode64(uid UID) string {
-	b := make([]rune, 16)
-	for i, x := range uid.Split(6) {
+func encode64(in []byte) string {
+	b := make([]rune, len(in))
+	for i, x := range in {
 		b[i] = alphabet[x]
 	}
 	return string(b)
 }
 
-func decode64(uid string) (val UID) {
-	b := make([]byte, 16)
+func decode64(uid string) []byte {
+	b := make([]byte, len(uid))
 	for i, x := range uid {
 		switch {
 		case x == '.':
@@ -48,6 +48,5 @@ func decode64(uid string) (val UID) {
 		}
 	}
 
-	val.Fold(6, b)
-	return
+	return b
 }
