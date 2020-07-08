@@ -25,19 +25,6 @@ import (
 	"github.com/fogfish/it"
 )
 
-/*
-TODO
-
-
-Encode G -> String
-Encode L -> G -> String
-Decode String -> G
-
-Json Marshal
-Json UnMarshal
-
-*/
-
 var drifts []time.Duration = []time.Duration{
 	30 * time.Second,
 	60 * time.Second,
@@ -112,7 +99,7 @@ func TestDiffL(t *testing.T) {
 		it.Ok(t).
 			If(d.Seq()).Should().Equal(uint64(1)).
 			If(d.Time()).Should().Equal(int64(0)).
-			If(d.Bytes()).Should().Equal([]byte{byte((7 - i) << 5), 0, 0, 0, 0, 0, 0, 1})
+			If(d.Bytes()).Should().Equal([]byte{byte(i << 5), 0, 0, 0, 0, 0, 0, 1})
 	}
 }
 
@@ -188,7 +175,7 @@ func TestDiffG(t *testing.T) {
 			If(d.Seq()).Should().Equal(uint64(1)).
 			If(d.Time()).Should().Equal(int64(0)).
 			If(d.Node()).Should().Equal(uint64(0xffffffff)).
-			If(bytes[0]).Should().Equal(byte((7 - i) << 5)).
+			If(bytes[0]).Should().Equal(byte(i << 5)).
 			If(bytes[11]).Should().Equal(byte(1))
 	}
 }
@@ -200,7 +187,7 @@ func TestDiffGZ(t *testing.T) {
 			guid.Clock(func() uint64 { return 1 << 17 }),
 		)
 
-		z := node.Z(drift)
+		z := node.Z(drift).ToG(node)
 		a := node.G(drift)
 		d := a.Diff(z)
 
@@ -218,35 +205,27 @@ func TestLtoG(t *testing.T) {
 			guid.Clock(func() uint64 { return 1 << 17 }),
 		)
 		a := guid.Seq.L(drift)
-		b := node.LtoG(a)
+		b := a.ToG(node)
 
 		it.Ok(t).
-			If(a.Eq(b)).Should().Equal(false).
 			If(a.Time()).Should().Equal(b.Time()).
 			If(a.Seq()).Should().Equal(b.Seq()).
-			If(a.Node()).Should().Equal(uint64(0)).
 			If(b.Node()).Should().Equal(uint64(0xffffffff))
 	}
 }
 
 func TestGtoL(t *testing.T) {
 	for _, drift := range drifts {
-		node := guid.New(
-			guid.Allocator(0xffffffff),
-			guid.Clock(func() uint64 { return 1 << 17 }),
-		)
 		a := guid.Seq.G(drift)
-		b := node.GtoL(a)
+		b := a.ToL()
 
 		it.Ok(t).
-			If(a.Eq(b)).Should().Equal(false).
 			If(a.Time()).Should().Equal(b.Time()).
-			If(a.Seq()).Should().Equal(b.Seq()).
-			If(b.Node()).Should().Equal(uint64(0))
+			If(a.Seq()).Should().Equal(b.Seq())
 	}
 }
 
-func TestCodec(t *testing.T) {
+func TestCodecG(t *testing.T) {
 	for i := 0; i <= 31; i++ {
 		node := guid.New(
 			guid.Allocator(1<<i),
@@ -254,12 +233,14 @@ func TestCodec(t *testing.T) {
 		)
 
 		a := node.G()
-		b := guid.Decode(guid.Encode(a))
+		b := guid.G{}
+		b.FromBytes(a.Bytes())
+
 		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
 	}
 }
 
-func TestCodecBytes(t *testing.T) {
+func TestCodecGBytes(t *testing.T) {
 	for i := 0; i <= 31; i++ {
 		node := guid.New(
 			guid.Allocator(1<<i),
@@ -267,23 +248,70 @@ func TestCodecBytes(t *testing.T) {
 		)
 
 		a := node.G()
-		b := guid.DecodeBytes(guid.EncodeBytes(a))
+		b := guid.G{}
+		b.FromString(a.String())
+
+		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
+	}
+}
+
+func TestCodecL(t *testing.T) {
+	for i := 0; i <= 31; i++ {
+		node := guid.New(
+			guid.Allocator(1<<i),
+			guid.Clock(func() uint64 { return 0 }),
+		)
+
+		a := node.L()
+		b := guid.L{}
+		b.FromBytes(a.Bytes())
+
+		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
+	}
+}
+
+func TestCodecLBytes(t *testing.T) {
+	for i := 0; i <= 31; i++ {
+		node := guid.New(
+			guid.Allocator(1<<i),
+			guid.Clock(func() uint64 { return 0 }),
+		)
+
+		a := node.L()
+		b := guid.L{}
+		b.FromString(a.String())
+
 		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
 	}
 }
 
 func TestOrdChars(t *testing.T) {
-	a := guid.Seq.G().Chars()
-	b := guid.Seq.G().Chars()
+	a := guid.Seq.G().String()
+	b := guid.Seq.G().String()
 
 	it.Ok(t).
 		If(a).ShouldNot().Equal(b).
 		If(a).Should().Be().Less(b)
 }
 
-func TestJSON(t *testing.T) {
+func TestJSONCodecL(t *testing.T) {
 	type MyStruct struct {
-		ID guid.UID `json:"id"`
+		ID guid.L `json:"id"`
+	}
+
+	val := MyStruct{guid.Seq.L()}
+	b, _ := json.Marshal(val)
+
+	var x MyStruct
+	json.Unmarshal(b, &x)
+
+	it.Ok(t).
+		If(val.ID.Eq(x.ID)).Should().Equal(true)
+}
+
+func TestJSONCodecG(t *testing.T) {
+	type MyStruct struct {
+		ID guid.G `json:"id"`
 	}
 
 	val := MyStruct{guid.Seq.G()}
