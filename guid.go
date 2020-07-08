@@ -653,7 +653,7 @@ func (uid G) String() string {
 
 /*
 
-OfBytes decodes converts k-order UID from bytes
+FromBytes decodes converts k-order UID from bytes
 */
 func (uid *L) FromBytes(val []byte) {
 	uid.Fold(8, val)
@@ -661,7 +661,7 @@ func (uid *L) FromBytes(val []byte) {
 
 /*
 
-OfBytes decodes converts k-order UID from bytes
+FromBytes decodes converts k-order UID from bytes
 */
 func (uid *G) FromBytes(val []byte) {
 	uid.Fold(8, val)
@@ -669,7 +669,7 @@ func (uid *G) FromBytes(val []byte) {
 
 /*
 
-OfString decodes converts k-order UID from lexicographically sortable strings
+FromString decodes converts k-order UID from lexicographically sortable strings
 */
 func (uid *L) FromString(val string) {
 	// Note: split only works if result is aligned to divider
@@ -680,7 +680,7 @@ func (uid *L) FromString(val string) {
 
 /*
 
-OfString decodes converts k-order UID from lexicographically sortable strings
+FromString decodes converts k-order UID from lexicographically sortable strings
 */
 func (uid *G) FromString(val string) {
 	uid.Fold(6, decode64(val))
