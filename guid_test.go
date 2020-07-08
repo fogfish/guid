@@ -294,12 +294,27 @@ func TestOrdChars(t *testing.T) {
 		If(a).Should().Be().Less(b)
 }
 
-func TestJSON(t *testing.T) {
+func TestJSONCodecL(t *testing.T) {
 	type MyStruct struct {
 		ID guid.L `json:"id"`
 	}
 
 	val := MyStruct{guid.Seq.L()}
+	b, _ := json.Marshal(val)
+
+	var x MyStruct
+	json.Unmarshal(b, &x)
+
+	it.Ok(t).
+		If(val.ID.Eq(x.ID)).Should().Equal(true)
+}
+
+func TestJSONCodecG(t *testing.T) {
+	type MyStruct struct {
+		ID guid.G `json:"id"`
+	}
+
+	val := MyStruct{guid.Seq.G()}
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
