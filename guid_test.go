@@ -234,7 +234,7 @@ func TestCodecG(t *testing.T) {
 
 		a := node.G()
 		b := guid.G{}
-		b.OfBytes(a.Bytes())
+		b.FromBytes(a.Bytes())
 
 		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
 	}
@@ -249,7 +249,7 @@ func TestCodecGBytes(t *testing.T) {
 
 		a := node.G()
 		b := guid.G{}
-		b.OfString(a.String())
+		b.FromString(a.String())
 
 		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
 	}
@@ -264,7 +264,7 @@ func TestCodecL(t *testing.T) {
 
 		a := node.L()
 		b := guid.L{}
-		b.OfBytes(a.Bytes())
+		b.FromBytes(a.Bytes())
 
 		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
 	}
@@ -279,7 +279,7 @@ func TestCodecLBytes(t *testing.T) {
 
 		a := node.L()
 		b := guid.L{}
-		b.OfString(a.String())
+		b.FromString(a.String())
 
 		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
 	}

@@ -306,9 +306,7 @@ func newG(n, drift, t, seq uint64) (uid G) {
 	thi, tlo := splitT(t, drift)
 	nhi, nlo := splitNode(n, drift)
 
-	// Note: we raise a high flag only as internal indicator of global
-	// TODO: refactor using type safe approach
-	uid.hi = thi | nhi //| 0x7000000000000000
+	uid.hi = thi | nhi
 	uid.lo = nlo | tlo | seq
 
 	return
@@ -657,7 +655,7 @@ func (uid G) String() string {
 
 OfBytes decodes converts k-order UID from bytes
 */
-func (uid *L) OfBytes(val []byte) {
+func (uid *L) FromBytes(val []byte) {
 	uid.Fold(8, val)
 }
 
@@ -665,7 +663,7 @@ func (uid *L) OfBytes(val []byte) {
 
 OfBytes decodes converts k-order UID from bytes
 */
-func (uid *G) OfBytes(val []byte) {
+func (uid *G) FromBytes(val []byte) {
 	uid.Fold(8, val)
 }
 
@@ -673,7 +671,7 @@ func (uid *G) OfBytes(val []byte) {
 
 OfString decodes converts k-order UID from lexicographically sortable strings
 */
-func (uid *L) OfString(val string) {
+func (uid *L) FromString(val string) {
 	// Note: split only works if result is aligned to divider
 	//       96 ÷ 6 = 16
 	//       64 ÷ 6 = 10 rem 1 (thus divider 4)
@@ -684,7 +682,7 @@ func (uid *L) OfString(val string) {
 
 OfString decodes converts k-order UID from lexicographically sortable strings
 */
-func (uid *G) OfString(val string) {
+func (uid *G) FromString(val string) {
 	uid.Fold(6, decode64(val))
 }
 
@@ -697,7 +695,7 @@ func (uid *L) UnmarshalJSON(b []byte) (err error) {
 	if err = json.Unmarshal(b, &val); err != nil {
 		return
 	}
-	uid.OfString(val)
+	uid.FromString(val)
 	return
 }
 
@@ -710,7 +708,7 @@ func (uid *G) UnmarshalJSON(b []byte) (err error) {
 	if err = json.Unmarshal(b, &val); err != nil {
 		return
 	}
-	uid.OfString(val)
+	uid.FromString(val)
 	return
 }
 
