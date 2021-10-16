@@ -324,10 +324,12 @@ func TestJSONCodecG(t *testing.T) {
 		If(val.ID.Eq(x.ID)).Should().Equal(true)
 }
 
+var last *guid.G
+
 func BenchmarkL(b *testing.B) {
-	b.RunParallel(func(par *testing.PB) {
-		for par.Next() {
-			guid.Seq.G()
-		}
-	})
+	var val guid.G
+	for i := 0; i < b.N; i++ {
+		val = guid.Seq.G()
+	}
+	last = &val
 }

@@ -226,6 +226,19 @@ func DefaultClock() Config {
 
 /*
 
+InverseClock configures default timestamp generator functions derived from
+time.Now().UnixNano()
+*/
+func InverseClock() Config {
+	return func(n *Alloc) {
+		n.now = func() uint64 {
+			return 0xffffffffffffffff - uint64(time.Now().UnixNano())
+		}
+	}
+}
+
+/*
+
 DefaultAllocator configures default algorithm to derive allocator name
 from cryptographic random generator.
 */
