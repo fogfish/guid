@@ -17,7 +17,6 @@
 package guid_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -37,24 +36,28 @@ var drifts []time.Duration = []time.Duration{
 }
 
 func TestZ(t *testing.T) {
-	a := guid.Seq.Z()
-	b := guid.Seq.Z()
+	c := guid.NewLClock()
+	a := guid.Z(c)
+	b := guid.Z(c)
 
 	it.Ok(t).
-		If(a.Eq(b)).Should().Equal(true).
-		If(a.Lt(b)).ShouldNot().Equal(true).
-		If(a.Time()).Should().Equal(int64(0)).
-		If(a.Seq()).Should().Equal(uint64(0))
+		If(guid.Eq(a, b)).Should().Equal(true).
+		If(guid.Lt(a, b)).ShouldNot().Equal(true).
+		If(guid.Seq(a)).Should().Equal(uint64(0)).
+		If(guid.Time(a)).Should().Equal(uint64(0)).
+		If(guid.Epoch(a)).Should().Equal(time.Unix(0, 0))
 }
 
 func TestL(t *testing.T) {
-	a := guid.Seq.L()
-	b := guid.Seq.L()
+	c := guid.NewLClock()
+	a := guid.L(c)
+	b := guid.L(c)
 
 	it.Ok(t).
-		If(a.Eq(b)).ShouldNot().Equal(true).
-		If(a.Lt(b)).Should().Equal(true).
-		If(b.Seq() - a.Seq()).Should().Equal(uint64(1))
+		If(guid.Eq(a, b)).ShouldNot().Equal(true).
+		If(guid.Lt(a, b)).Should().Equal(true).
+		If(guid.Lt(b, a)).Should().Equal(false).
+		If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1))
 }
 
 func TestSpecL(t *testing.T) {
@@ -68,67 +71,69 @@ func TestSpecL(t *testing.T) {
 
 	for _, d := range drifts {
 		for tc, expect := range spec {
-			n := guid.New(
-				guid.Allocator(0xffffffff),
+			c := guid.NewLClock(
+				guid.NodeID(0xffffffff),
 				guid.Clock(func() uint64 { return tc }),
 			)
-			a := n.L(d)
-			b := n.L(d)
+			a := guid.L(c, d)
+			b := guid.L(c, d)
 
 			it.Ok(t).
-				If(a.Eq(b)).ShouldNot().Equal(true).
-				If(a.Lt(b)).Should().Equal(true).
-				If(b.Seq() - a.Seq()).Should().Equal(uint64(1)).
-				If(a.Time() == b.Time()).Should().Equal(true).
-				If(a.Time()).Should().Equal(expect)
+				If(guid.Eq(a, b)).ShouldNot().Equal(true).
+				If(guid.Lt(a, b)).Should().Equal(true).
+				If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1)).
+				If(guid.Time(a) == guid.Time(b)).Should().Equal(true).
+				If(guid.Time(a)).Should().Equal(uint64(expect))
 		}
 	}
 }
 
 func TestDiffL(t *testing.T) {
 	for i, drift := range drifts {
-		node := guid.New(
-			guid.Allocator(0xffffffff),
+		c := guid.NewLClock(
+			guid.NodeID(0xffffffff),
 			guid.Clock(func() uint64 { return 1 << 17 }),
 		)
 
-		a := node.L(drift)
-		b := node.L(drift)
-		d := b.Diff(a)
+		a := guid.L(c, drift)
+		b := guid.L(c, drift)
+		d := guid.Diff(b, a)
 
 		it.Ok(t).
-			If(d.Seq()).Should().Equal(uint64(1)).
-			If(d.Time()).Should().Equal(int64(0)).
-			If(d.Bytes()).Should().Equal([]byte{byte(i << 5), 0, 0, 0, 0, 0, 0, 1})
+			If(guid.Seq(d)).Should().Equal(uint64(1)).
+			If(guid.Time(d)).Should().Equal(uint64(0)).
+			If(guid.Bytes(d)).Should().Equal([]byte{byte(i << 5), 0, 0, 0, 0, 0, 0, 1})
 	}
 }
 
 func TestDiffLZ(t *testing.T) {
 	for _, drift := range drifts {
-		node := guid.New(
-			guid.Allocator(0xffffffff),
+		c := guid.NewLClock(
+			guid.NodeID(0xffffffff),
 			guid.Clock(func() uint64 { return 1 << 17 }),
 		)
 
-		z := node.Z(drift)
-		a := node.L(drift)
-		d := a.Diff(z)
+		z := guid.Z(c, drift)
+		a := guid.L(c, drift)
+		d := guid.Diff(a, z)
 
 		it.Ok(t).
-			If(d.Seq()).Should().Equal(a.Seq()).
-			If(d.Time()).Should().Equal(a.Time())
+			If(guid.Eq(d, a)).Should().Equal(true).
+			If(guid.Seq(d)).Should().Equal(guid.Seq(a)).
+			If(guid.Time(d)).Should().Equal(guid.Time(d))
 	}
 }
 
 func TestG(t *testing.T) {
-	a := guid.Seq.G()
-	b := guid.Seq.G()
+	c := guid.NewLClock()
+	a := guid.G(c)
+	b := guid.G(c)
 
 	it.Ok(t).
-		If(a.Eq(b)).ShouldNot().Equal(true).
-		If(a.Lt(b)).Should().Equal(true).
-		If(a.Node()).Should().Equal(b.Node()).
-		If(b.Seq() - a.Seq()).Should().Equal(uint64(1))
+		If(guid.Eq(a, b)).ShouldNot().Equal(true).
+		If(guid.Lt(a, b)).Should().Equal(true).
+		If(guid.Node(a)).Should().Equal(guid.Node(b)).
+		If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1))
 }
 
 func TestSpecG(t *testing.T) {
@@ -140,80 +145,84 @@ func TestSpecG(t *testing.T) {
 		1 << 62: 1 << 62,
 	}
 
-	for _, d := range drifts {
+	// Note: if drift < 30 sec than node id is fits low bits only
+	for _, d := range drifts[1:] {
 		for tc, expect := range spec {
-			n := guid.New(
-				guid.Allocator(0xffffffff),
+			c := guid.NewLClock(
+				guid.NodeID(0xffffffff),
 				guid.Clock(func() uint64 { return tc }),
 			)
-			a := n.G(d)
-			b := n.G(d)
+			a := guid.G(c, d)
+			b := guid.G(c, d)
 
 			it.Ok(t).
-				If(a.Eq(b)).ShouldNot().Equal(true).
-				If(a.Lt(b)).Should().Equal(true).
-				If(b.Seq() - a.Seq()).Should().Equal(uint64(1)).
-				If(a.Time() == b.Time()).Should().Equal(true).
-				If(a.Time()).Should().Equal(expect)
+				If(guid.Eq(a, b)).ShouldNot().Equal(true).
+				If(guid.Lt(a, b)).Should().Equal(true).
+				If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1)).
+				If(guid.Time(a) == guid.Time(b)).Should().Equal(true).
+				If(guid.Time(a)).Should().Equal(uint64(expect))
 		}
 	}
 }
 
 func TestDiffG(t *testing.T) {
-	for i, drift := range drifts {
-		node := guid.New(
-			guid.Allocator(0xffffffff),
+	for i, drift := range drifts[1:] {
+		c := guid.NewLClock(
+			guid.NodeID(0xffffffff),
 			guid.Clock(func() uint64 { return 1 << 17 }),
 		)
 
-		a := node.G(drift)
-		b := node.G(drift)
-		d := b.Diff(a)
-		bytes := d.Bytes()
+		a := guid.G(c, drift)
+		b := guid.G(c, drift)
+		d := guid.Diff(b, a)
+		bytes := guid.Bytes(d)
 
 		it.Ok(t).
-			If(d.Seq()).Should().Equal(uint64(1)).
-			If(d.Time()).Should().Equal(int64(0)).
-			If(d.Node()).Should().Equal(uint64(0xffffffff)).
-			If(bytes[0]).Should().Equal(byte(i << 5)).
+			If(guid.Seq(d)).Should().Equal(uint64(1)).
+			If(guid.Time(d)).Should().Equal(uint64(0)).
+			If(guid.Node(d)).Should().Equal(uint64(0xffffffff)).
+			If(bytes[0]).Should().Equal(byte((i + 1) << 5)).
 			If(bytes[11]).Should().Equal(byte(1))
 	}
 }
 
 func TestDiffGZ(t *testing.T) {
-	for _, drift := range drifts {
-		node := guid.New(
-			guid.Allocator(0xffffffff),
+	for _, drift := range drifts[1:] {
+		c := guid.NewLClock(
+			guid.NodeID(0xffffffff),
 			guid.Clock(func() uint64 { return 1 << 17 }),
 		)
 
-		z := node.Z(drift).ToG(node)
-		a := node.G(drift)
-		d := a.Diff(z)
+		z := guid.ToG(c, guid.Z(c, drift))
+		a := guid.G(c, drift)
+		d := guid.Diff(a, z)
 
 		it.Ok(t).
-			If(d.Seq()).Should().Equal(a.Seq()).
-			If(d.Time()).Should().Equal(a.Time()).
-			If(d.Node()).Should().Equal(a.Node())
+			If(guid.Eq(a, d)).Should().Eq(true).
+			If(guid.Seq(d)).Should().Equal(guid.Seq(a)).
+			If(guid.Time(d)).Should().Equal(guid.Time(a)).
+			If(guid.Node(d)).Should().Equal(guid.Node(a))
 	}
 }
 
 func TestLtoG(t *testing.T) {
 	for _, drift := range drifts {
-		node := guid.New(
-			guid.Allocator(0xffffffff),
-			guid.Clock(func() uint64 { return 1 << 17 }),
+		c := guid.NewLClock(
+			guid.NodeID(0xffffffff),
+			guid.ClockUnix(),
 		)
-		a := guid.Seq.L(drift)
-		b := a.ToG(node)
+
+		a := guid.L(c, drift)
+		b := guid.ToG(c, a)
 
 		it.Ok(t).
-			If(a.Time()).Should().Equal(b.Time()).
-			If(a.Seq()).Should().Equal(b.Seq()).
-			If(b.Node()).Should().Equal(uint64(0xffffffff))
+			If(guid.Time(b)).Should().Equal(guid.Time(a)).
+			If(guid.Seq(b)).Should().Equal(guid.Seq(a)).
+			If(guid.Node(b)).Should().Equal(uint64(0xffffffff))
 	}
 }
 
+/*
 func TestGtoL(t *testing.T) {
 	for _, drift := range drifts {
 		a := guid.Seq.G(drift)
@@ -333,3 +342,4 @@ func BenchmarkL(b *testing.B) {
 	}
 	last = &val
 }
+*/

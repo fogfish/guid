@@ -65,9 +65,9 @@ type K struct{ hi, lo uint64 }
 
 /*
 
-String representation of k-order number
+ID representation of k-order number
 */
-type String string
+type ID string
 
 /*
 

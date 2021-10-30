@@ -20,6 +20,7 @@ package guid
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync/atomic"
 	"time"
 )
@@ -31,22 +32,23 @@ Global at the node
 */
 var unique int64
 
-/*
+// zero point for drift drift
+const driftZ = 18
 
-T is a timestamp generator functions
-*/
-// type T func() uint64
-
-/*
-
-Alloc type defines behavior of UID allocation
-*/
-// type Alloc struct {
-// 	uint64
-// 	now T
+// IDz generates locally unique using default clock
+// func IDz(drift ...time.Duration) K {
+// 	return Z(defaultChronos, drift...)
 // }
 
-const driftZ = 18
+// // LID generates locally unique using default clock
+// func IDl(drift ...time.Duration) K {
+// 	return L(defaultChronos, drift...)
+// }
+
+// // GID generates globally unique using default clock
+// func IDg(drift ...time.Duration) K {
+// 	return G(defaultChronos, drift...)
+// }
 
 /*
 
@@ -91,11 +93,6 @@ func mkLUID(drift, t, seq uint64) (uid K) {
 	return
 }
 
-// LID generates locally unique using default clock
-func LID(drift ...time.Duration) K {
-	return L(defaultChronos, drift...)
-}
-
 /*
 
 G generate globally unique 96-bit k-order identifier.
@@ -109,23 +106,15 @@ func G(clock Chronos, drift ...time.Duration) K {
 	return mkGUID(clock.L(), driftInBits(drift), clock.T(), uniqueInt())
 }
 
-// func (n Alloc) G(interval ...time.Duration) G {
-// 	return newG(n.uint64, drift(interval...), n.now(), uniqueInt())
-// }
-
 func mkGUID(n, drift, t, seq uint64) (uid K) {
 	thi, tlo := splitT(t, drift)
 	nhi, nlo := splitNode(n, drift)
 
+	// Note: with drift = 30 sec, nhi = 0
 	uid.hi = thi | nhi
 	uid.lo = nlo | tlo | seq
 
 	return
-}
-
-// GID generates globally unique using default clock
-func GID(drift ...time.Duration) K {
-	return G(defaultChronos, drift...)
 }
 
 //
@@ -499,17 +488,21 @@ func Bytes(uid K) []byte {
 
 /*
 
-ID encodes k-ordered value to lexicographically sortable strings
+String encodes k-ordered value to lexicographically sortable strings
 */
-func ID(uid K) string {
+func String(uid K) string {
 	// Note: split only works if result is aligned to divider
 	//       96 ÷ 6 = 16
 	//       64 ÷ 6 = 10 rem 1
-	if uid.hi == 0 {
-		return encode64(Split(uid, 4))
-	}
+	// if uid.hi == 0 {
+	// 	return encode64(Split(uid, 4))
+	// }
+	// return encode64(Split(uid, 6))
 
-	return encode64(Split(uid, 6))
+	// Note: encoding local and global values to string produces result of
+	//       same length. It is not possible to distinguish local from global
+	//       using string encoding. Thus both are encoded as binaries
+	return encode64(split(uid.hi, uid.lo, 96, 6))
 }
 
 /*
@@ -517,9 +510,14 @@ func ID(uid K) string {
 FromBytes decodes converts k-order UID from bytes
 */
 func FromBytes(val []byte) K {
-	// TODO: based on len
-	// return LFold(8, val)
-	// return GFold(8, val)
+	switch len(val) {
+	case 8:
+		return LFold(8, val)
+	case 12:
+		return GFold(8, val)
+	default:
+		panic(fmt.Errorf("malformed k-order number: %v", val))
+	}
 }
 
 /*
@@ -532,7 +530,8 @@ func FromString(val string) K {
 	//       64 ÷ 6 = 10 rem 1 (thus divider 4)
 	// uid.Fold(4, decode64(val))
 	// uid.Fold(6, decode64(val))
-	// TODO: based on len
+
+	return GFold(6, decode64(val))
 }
 
 /*
@@ -555,3 +554,7 @@ MarshalJSON encodes k-ordered value to lexicographically sortable JSON strings
 func (uid K) MarshalJSON() (bytes []byte, err error) {
 	return json.Marshal(String(uid))
 }
+
+// func (uid K) String() string {
+// 	return String(uid)
+// }
