@@ -21,16 +21,8 @@ package guid
 import (
 	"encoding/json"
 	"fmt"
-	"sync/atomic"
 	"time"
 )
-
-/*
-
-Unique Monotonic Integer sequence
-Global at the node
-*/
-var unique int64
 
 // zero point for drift drift
 const driftZ = 18
@@ -78,7 +70,8 @@ L generates locally unique 64-bit k-order identifier.
 
 */
 func L(clock Chronos, drift ...time.Duration) K {
-	return mkLUID(driftInBits(drift), clock.T(), uniqueInt())
+	t, seq := clock.T()
+	return mkLUID(driftInBits(drift), t, seq)
 }
 
 // func (n Alloc) L(interval ...time.Duration) L {
@@ -103,7 +96,8 @@ G generate globally unique 96-bit k-order identifier.
 
 */
 func G(clock Chronos, drift ...time.Duration) K {
-	return mkGUID(clock.L(), driftInBits(drift), clock.T(), uniqueInt())
+	t, seq := clock.T()
+	return mkGUID(clock.L(), driftInBits(drift), t, seq)
 }
 
 func mkGUID(n, drift, t, seq uint64) (uid K) {
@@ -115,11 +109,6 @@ func mkGUID(n, drift, t, seq uint64) (uid K) {
 	uid.lo = nlo | tlo | seq
 
 	return
-}
-
-//
-func uniqueInt() uint64 {
-	return uint64(atomic.AddInt64(&unique, 1) & 0x3fff)
 }
 
 /*

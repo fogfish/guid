@@ -17,3 +17,82 @@
 */
 
 package guid_test
+
+import (
+	"os"
+	"testing"
+	"time"
+
+	"github.com/fogfish/guid"
+	"github.com/fogfish/it"
+)
+
+func TestConfNodeID(t *testing.T) {
+	c := guid.NewLClock(
+		guid.ConfNodeID(0xfedcba98),
+	)
+	a := guid.G(c)
+
+	it.Ok(t).
+		If(guid.Node(a)).Should().Equal(uint64(0xfedcba98))
+}
+
+func TestConfNodeFromEnv(t *testing.T) {
+	os.Setenv("CONFIG_GUID_NODE_ID", "abc@go")
+
+	c := guid.NewLClock(
+		guid.ConfNodeFromEnv(),
+	)
+	a := guid.G(c)
+
+	it.Ok(t).
+		If(guid.Node(a)).Should().Equal(uint64(0x53051caf))
+}
+
+func TestConfNodeRand(t *testing.T) {
+	c := guid.NewLClock(
+		guid.ConfNodeRand(),
+	)
+	a := guid.G(c)
+
+	it.Ok(t).
+		If(guid.Node(a)).ShouldNot().Equal(0)
+}
+
+func TestConfClock(t *testing.T) {
+	c := guid.NewLClock(
+		guid.ConfClock(func() uint64 { return 0xfedcba98 << 16 }),
+	)
+	a := guid.G(c)
+
+	it.Ok(t).
+		If(guid.Time(a)).Should().Equal(uint64(0xfedcba98 << 16))
+}
+
+func TestConfClockUnix(t *testing.T) {
+	c := guid.NewLClock(
+		guid.ConfClockUnix(),
+	)
+	a := guid.G(c)
+	b := guid.G(c)
+	time.Sleep(2 * time.Second)
+	d := guid.G(c)
+
+	it.Ok(t).
+		If(guid.Lt(a, b)).Should().Equal(true).
+		If(guid.Lt(b, d)).Should().Equal(true)
+}
+
+func TestConfClockInverse(t *testing.T) {
+	c := guid.NewLClock(
+		guid.ConfClockInverse(),
+	)
+	a := guid.G(c)
+	b := guid.G(c)
+	time.Sleep(2 * time.Second)
+	d := guid.G(c)
+
+	it.Ok(t).
+		If(guid.Lt(b, a)).Should().Equal(true).
+		If(guid.Lt(d, b)).Should().Equal(true)
+}

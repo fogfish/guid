@@ -26,7 +26,7 @@ type Chronos interface {
 	// Spatially unique identifier ⟨𝒍⟩ of ID allocator so called node location
 	L() uint64
 	// Monotonically increasing logical clock ⟨𝒕⟩
-	T() uint64
+	T() (uint64, uint64)
 }
 
 /*
@@ -38,13 +38,14 @@ type LClock struct {
 	location uint64
 	// Monotonically increasing logical clock ⟨𝒕⟩ generator
 	ticker func() uint64
+	unique func() uint64
 }
 
 // L returns spatially unique identifier ⟨𝒍⟩, so called node location
 func (clock LClock) L() uint64 { return clock.location }
 
 // T returns monotonically increasing logical clock ⟨𝒕⟩
-func (clock LClock) T() uint64 { return clock.ticker() }
+func (clock LClock) T() (uint64, uint64) { return clock.ticker(), clock.unique() }
 
 /*
 
@@ -68,31 +69,3 @@ type K struct{ hi, lo uint64 }
 ID representation of k-order number
 */
 type ID string
-
-/*
-
-...
-
-*/
-type Sequence interface {
-	Z() K
-	L() K
-	G() K
-	ID() string
-}
-
-/*
-
-xxx
-
-*/
-type Kx interface {
-	// Split number to fractions
-	Val() (uint64, uint64)
-
-	ToG()
-	ToL()
-	Time() int64
-	Node() uint64
-	Seq()
-}

@@ -1,18 +1,20 @@
-//
-//   Copyright 2012 Dmitry Kolesnikov, All Rights Reserved
-//
-//   Licensed under the Apache License, Version 2.0 (the "License");
-//   you may not use this file except in compliance with the License.
-//   You may obtain a copy of the License at
-//
-//       http://www.apache.org/licenses/LICENSE-2.0
-//
-//   Unless required by applicable law or agreed to in writing, software
-//   distributed under the License is distributed on an "AS IS" BASIS,
-//   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//   See the License for the specific language governing permissions and
-//   limitations under the License.
-//
+/*
+
+  Copyright 2012 Dmitry Kolesnikov, All Rights Reserved
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+*/
 
 package guid_test
 
@@ -73,8 +75,8 @@ func TestSpecL(t *testing.T) {
 	for _, d := range drifts {
 		for tc, expect := range spec {
 			c := guid.NewLClock(
-				guid.NodeID(0xffffffff),
-				guid.Clock(func() uint64 { return tc }),
+				guid.ConfNodeID(0xffffffff),
+				guid.ConfClock(func() uint64 { return tc }),
 			)
 			a := guid.L(c, d)
 			b := guid.L(c, d)
@@ -92,8 +94,8 @@ func TestSpecL(t *testing.T) {
 func TestDiffL(t *testing.T) {
 	for i, drift := range drifts {
 		c := guid.NewLClock(
-			guid.NodeID(0xffffffff),
-			guid.Clock(func() uint64 { return 1 << 17 }),
+			guid.ConfNodeID(0xffffffff),
+			guid.ConfClock(func() uint64 { return 1 << 17 }),
 		)
 
 		a := guid.L(c, drift)
@@ -110,8 +112,8 @@ func TestDiffL(t *testing.T) {
 func TestDiffLZ(t *testing.T) {
 	for _, drift := range drifts {
 		c := guid.NewLClock(
-			guid.NodeID(0xffffffff),
-			guid.Clock(func() uint64 { return 1 << 17 }),
+			guid.ConfNodeID(0xffffffff),
+			guid.ConfClock(func() uint64 { return 1 << 17 }),
 		)
 
 		z := guid.Z(c, drift)
@@ -150,8 +152,8 @@ func TestSpecG(t *testing.T) {
 	for _, d := range drifts[1:] {
 		for tc, expect := range spec {
 			c := guid.NewLClock(
-				guid.NodeID(0xffffffff),
-				guid.Clock(func() uint64 { return tc }),
+				guid.ConfNodeID(0xffffffff),
+				guid.ConfClock(func() uint64 { return tc }),
 			)
 			a := guid.G(c, d)
 			b := guid.G(c, d)
@@ -169,8 +171,8 @@ func TestSpecG(t *testing.T) {
 func TestDiffG(t *testing.T) {
 	for i, drift := range drifts[1:] {
 		c := guid.NewLClock(
-			guid.NodeID(0xffffffff),
-			guid.Clock(func() uint64 { return 1 << 17 }),
+			guid.ConfNodeID(0xffffffff),
+			guid.ConfClock(func() uint64 { return 1 << 17 }),
 		)
 
 		a := guid.G(c, drift)
@@ -190,8 +192,8 @@ func TestDiffG(t *testing.T) {
 func TestDiffGZ(t *testing.T) {
 	for _, drift := range drifts[1:] {
 		c := guid.NewLClock(
-			guid.NodeID(0xffffffff),
-			guid.Clock(func() uint64 { return 1 << 17 }),
+			guid.ConfNodeID(0xffffffff),
+			guid.ConfClock(func() uint64 { return 1 << 17 }),
 		)
 
 		z := guid.ToG(c, guid.Z(c, drift))
@@ -209,8 +211,8 @@ func TestDiffGZ(t *testing.T) {
 func TestLtoG(t *testing.T) {
 	for _, drift := range drifts {
 		c := guid.NewLClock(
-			guid.NodeID(0xffffffff),
-			guid.ClockUnix(),
+			guid.ConfNodeID(0xffffffff),
+			guid.ConfClockUnix(),
 		)
 
 		a := guid.L(c, drift)
@@ -226,8 +228,8 @@ func TestLtoG(t *testing.T) {
 func TestGtoL(t *testing.T) {
 	for _, drift := range drifts {
 		c := guid.NewLClock(
-			guid.NodeID(0xffffffff),
-			guid.ClockUnix(),
+			guid.ConfNodeID(0xffffffff),
+			guid.ConfClockUnix(),
 		)
 
 		a := guid.G(c, drift)
@@ -242,8 +244,8 @@ func TestGtoL(t *testing.T) {
 func TestCodecG(t *testing.T) {
 	for i := 0; i <= 31; i++ {
 		c := guid.NewLClock(
-			guid.NodeID(1<<i),
-			guid.ClockUnix(),
+			guid.ConfNodeID(1<<i),
+			guid.ConfClockUnix(),
 		)
 
 		a := guid.G(c)
@@ -259,8 +261,8 @@ func TestCodecG(t *testing.T) {
 func TestCodecL(t *testing.T) {
 	for i := 0; i <= 31; i++ {
 		c := guid.NewLClock(
-			guid.NodeID(1<<i),
-			guid.ClockUnix(),
+			guid.ConfNodeID(1<<i),
+			guid.ConfClockUnix(),
 		)
 
 		a := guid.L(c)
@@ -275,8 +277,8 @@ func TestCodecL(t *testing.T) {
 
 func TestOrdChars(t *testing.T) {
 	c := guid.NewLClock(
-		guid.NodeID(0xffffffff),
-		guid.ClockUnix(),
+		guid.ConfNodeID(0xffffffff),
+		guid.ConfClockUnix(),
 	)
 
 	a := guid.String(guid.G(c))
@@ -293,8 +295,8 @@ func TestJSONCodecL(t *testing.T) {
 	}
 
 	c := guid.NewLClock(
-		guid.NodeID(0xffffffff),
-		guid.ClockUnix(),
+		guid.ConfNodeID(0xffffffff),
+		guid.ConfClockUnix(),
 	)
 	val := MyStruct{guid.L(c)}
 	b, _ := json.Marshal(val)
@@ -312,8 +314,8 @@ func TestJSONCodecG(t *testing.T) {
 	}
 
 	c := guid.NewLClock(
-		guid.NodeID(0xffffffff),
-		guid.ClockUnix(),
+		guid.ConfNodeID(0xffffffff),
+		guid.ConfClockUnix(),
 	)
 	val := MyStruct{guid.G(c)}
 	b, _ := json.Marshal(val)

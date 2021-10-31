@@ -41,8 +41,8 @@ NewLClock creates a new instance of Chronos
 */
 func NewLClock(opts ...Config) Chronos {
 	node := &LClock{}
-	ClockUnix()(node)
-	NodeRand()(node)
+	ConfClockUnix()(node)
+	ConfNodeRand()(node)
 
 	for _, f := range opts {
 		f(node)
@@ -52,9 +52,9 @@ func NewLClock(opts ...Config) Chronos {
 
 /*
 
-NodeID explicitly configures ⟨𝒍⟩ spatially unique identifier
+ConfNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier
 */
-func NodeID(id uint64) Config {
+func ConfNodeID(id uint64) Config {
 	return func(clock *LClock) {
 		clock.location = id & 0x00000000ffffffff
 	}
@@ -62,13 +62,13 @@ func NodeID(id uint64) Config {
 
 /*
 
-NodeFromEnv configures ⟨𝒍⟩ spatially unique identifier using env variable.
-  CONFIG_GUID_LOCATION_ID - defines location id as a string
+ConfNodeFromEnv configures ⟨𝒍⟩ spatially unique identifier using env variable.
+  CONFIG_GUID_NODE_ID - defines location id as a string
 */
-func NodeFromEnv() Config {
+func ConfNodeFromEnv() Config {
 	return func(clock *LClock) {
 		h := sha256.New()
-		h.Write([]byte(os.Getenv("CONFIG_GUID_LOCATION_ID")))
+		h.Write([]byte(os.Getenv("CONFIG_GUID_NODE_ID")))
 		hash := h.Sum(nil)
 		clock.location = uint64(hash[0])<<24 | uint64(hash[1])<<16 | uint64(hash[2])<<8 | uint64(hash[3])
 	}
@@ -76,9 +76,9 @@ func NodeFromEnv() Config {
 
 /*
 
-NodeRand configures ⟨𝒍⟩ spatially unique identifier using cryptographic random generator
+ConfNodeRand configures ⟨𝒍⟩ spatially unique identifier using cryptographic random generator
 */
-func NodeRand() Config {
+func ConfNodeRand() Config {
 	return func(clock *LClock) {
 		rander := rand.Reader
 		bytes := make([]byte, 8)
@@ -96,21 +96,23 @@ func NodeRand() Config {
 
 /*
 
-Clock configures a custom timestamp generator function
+ConfClock configures a custom timestamp generator function
 */
-func Clock(ticker func() uint64) Config {
+func ConfClock(ticker func() uint64) Config {
 	return func(clock *LClock) {
 		clock.ticker = ticker
+		clock.unique = uniqueInt
 	}
 }
 
 /*
 
-ClockUnix configures unix timestamp time.Now().UnixNano() as generator function
+ConfClockUnix configures unix timestamp time.Now().UnixNano() as generator function
 */
-func ClockUnix() Config {
+func ConfClockUnix() Config {
 	return func(clock *LClock) {
 		clock.ticker = unixtime
+		clock.unique = uniqueInt
 	}
 }
 
@@ -120,11 +122,12 @@ func unixtime() uint64 {
 
 /*
 
-ClockInverse configures inverse unix timestamp as generator function
+ConfClockInverse configures inverse unix timestamp as generator function
 */
-func ClockInverse() Config {
+func ConfClockInverse() Config {
 	return func(clock *LClock) {
 		clock.ticker = inversetime
+		clock.unique = inverseInt
 	}
 }
 
