@@ -96,3 +96,29 @@ func TestConfClockInverse(t *testing.T) {
 		If(guid.Lt(b, a)).Should().Equal(true).
 		If(guid.Lt(d, b)).Should().Equal(true)
 }
+
+func TestTimeUnix(t *testing.T) {
+	n := time.Now().Round(10 * time.Millisecond)
+	c := guid.NewLClock(
+		guid.ConfClock(func() uint64 { return uint64(n.UnixNano()) }),
+	)
+
+	a := guid.G(c)
+	v := guid.TimeUnix(a).Round(10 * time.Millisecond)
+
+	it.Ok(t).
+		If(v).Should().Equal(n)
+}
+
+func TestTimeInverse(t *testing.T) {
+	n := time.Now().Round(10 * time.Millisecond)
+	c := guid.NewLClock(
+		guid.ConfClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }),
+	)
+
+	a := guid.G(c)
+	v := guid.TimeInverse(a).Round(10 * time.Millisecond)
+
+	it.Ok(t).
+		If(v).Should().Equal(n)
+}

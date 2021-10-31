@@ -27,21 +27,6 @@ import (
 // zero point for drift drift
 const driftZ = 18
 
-// IDz generates locally unique using default clock
-// func IDz(drift ...time.Duration) K {
-// 	return Z(defaultChronos, drift...)
-// }
-
-// // LID generates locally unique using default clock
-// func IDl(drift ...time.Duration) K {
-// 	return L(defaultChronos, drift...)
-// }
-
-// // GID generates globally unique using default clock
-// func IDg(drift ...time.Duration) K {
-// 	return G(defaultChronos, drift...)
-// }
-
 /*
 
 Z returns "zero" local (64-bit) k-order identifier
@@ -53,12 +38,6 @@ func Z(clock Chronos, drift ...time.Duration) (uid K) {
 	uid.lo = d
 	return
 }
-
-// func (n Alloc) Z(interval ...time.Duration) (uid L) {
-// 	d := (driftInBits(drift) - driftZ) << 61
-// 	uid.lo = d
-// 	return
-// }
 
 /*
 
@@ -73,10 +52,6 @@ func L(clock Chronos, drift ...time.Duration) K {
 	t, seq := clock.T()
 	return mkLUID(driftInBits(drift), t, seq)
 }
-
-// func (n Alloc) L(interval ...time.Duration) L {
-// 	return newL(drift(interval...), n.now(), uniqueInt())
-// }
 
 func mkLUID(drift, t, seq uint64) (uid K) {
 	d := (drift - driftZ) << 61
@@ -182,11 +157,11 @@ func splitNode(node, drift uint64) (uint64, uint64) {
 	return hi, lo
 }
 
-/*
+/*******************************************************************************
 
-Getters
+Lenses of K-Order Number
 
-*/
+*******************************************************************************/
 
 /*
 
@@ -199,14 +174,6 @@ func Time(uid K) uint64 {
 	}
 
 	return globalT(uid)
-}
-
-/*
-
-Epoch returns ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-*/
-func Epoch(uid K) time.Time {
-	return time.Unix(0, int64(Time(uid)))
 }
 
 /*
@@ -237,8 +204,7 @@ func globalT(uid K) uint64 {
 	lo := (uid.lo << a) >> (64 - d)
 
 	t := ((hi | lo) << (14 + 3))
-
-	return t & 0x7fffffffffffffff
+	return t //& 0x7fffffffffffffff
 }
 
 /*
@@ -275,15 +241,11 @@ func Seq(uid K) uint64 {
 	return uid.lo & 0x3fff
 }
 
-/*
+/*******************************************************************************
 
-ID generates new k-order value and encodes it to string
-*/
-// func ID(uid K) string {
-// 	// TODO:
-// 	// return n.G().String()
-// 	return ""
-// }
+K-Order "Algebra"
+
+*******************************************************************************/
 
 /*
 
@@ -298,11 +260,6 @@ func ToG(clock Chronos, uid K) K {
 	return mkGUID(clock.L(), d, localT(uid), Seq(uid))
 }
 
-// func (uid L) ToG(n Alloc) G {
-// 	d := (uid.lo >> 61) + driftZ
-// 	return newG(n.uint64, d, uint64(uid.Time()), uid.Seq())
-// }
-
 /*
 
 ToL casts global (96-bit) k-order value to local (64-bit) one
@@ -316,11 +273,6 @@ func ToL(uid K) K {
 	return mkLUID(d, globalT(uid), Seq(uid))
 }
 
-// func (uid G) ToL() L {
-// 	d := (uid.hi >> 29) + driftZ
-// 	return newL(d, uint64(uid.Time()), uid.Seq())
-// }
-
 /*
 
 Eq compares k-order UIDs, returns true if values are equal
@@ -331,30 +283,12 @@ func Eq(a, b K) bool {
 
 /*
 
-Eq compares k-order UIDs, returns true if values are equal
-*/
-// func (uid G) Eq(b G) bool {
-// 	return uid.hi == b.hi && uid.lo == b.lo
-// }
-
-/*
-
 Lt compares k-order UIDs, return true if value uid (this) less
 than value b (argument)
 */
 func Lt(a, b K) bool {
 	return a.hi <= b.hi && a.lo < b.lo
-	// return uid.lo < b.lo
 }
-
-/*
-
-Lt compares k-order UIDs, return true if value uid (this) less
-than value b (argument)
-*/
-// func (uid G) Lt(b G) bool {
-// 	return uid.hi <= b.hi && uid.lo < b.lo
-// }
 
 /*
 
@@ -480,17 +414,9 @@ func Bytes(uid K) []byte {
 String encodes k-ordered value to lexicographically sortable strings
 */
 func String(uid K) string {
-	// Note: split only works if result is aligned to divider
-	//       96 ÷ 6 = 16
-	//       64 ÷ 6 = 10 rem 1
-	// if uid.hi == 0 {
-	// 	return encode64(Split(uid, 4))
-	// }
-	// return encode64(Split(uid, 6))
-
 	// Note: encoding local and global values to string produces result of
 	//       same length. It is not possible to distinguish local from global
-	//       using string encoding. Thus both are encoded as binaries
+	//       using string encoding. Thus both are encoded as 96 bit binaries
 	return encode64(split(uid.hi, uid.lo, 96, 6))
 }
 
@@ -514,13 +440,18 @@ func FromBytes(val []byte) K {
 FromString decodes converts k-order UID from lexicographically sortable strings
 */
 func FromString(val string) K {
-	// Note: split only works if result is aligned to divider
-	//       96 ÷ 6 = 16
-	//       64 ÷ 6 = 10 rem 1 (thus divider 4)
-	// uid.Fold(4, decode64(val))
-	// uid.Fold(6, decode64(val))
-
+	// Note: encoding local and global values to string produces result of
+	//       same length. It is not possible to distinguish local from global
+	//       using string encoding. Thus both are encoded as 96 bit binaries
 	return GFold(6, decode64(val))
+}
+
+/*
+
+FromTime converts unix timestamp to new local K-order value
+*/
+func FromTime(t time.Time, drift ...time.Duration) K {
+	return mkLUID(driftInBits(drift), uint64(t.UnixNano()), 0)
 }
 
 /*
@@ -544,6 +475,10 @@ func (uid K) MarshalJSON() (bytes []byte, err error) {
 	return json.Marshal(String(uid))
 }
 
-// func (uid K) String() string {
-// 	return String(uid)
-// }
+/*
+
+String encoding of K-Order value
+*/
+func (uid K) String() string {
+	return String(uid)
+}

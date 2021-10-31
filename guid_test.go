@@ -48,7 +48,7 @@ func TestZ(t *testing.T) {
 		If(guid.Lt(a, b)).ShouldNot().Equal(true).
 		If(guid.Seq(a)).Should().Equal(uint64(0)).
 		If(guid.Time(a)).Should().Equal(uint64(0)).
-		If(guid.Epoch(a)).Should().Equal(time.Unix(0, 0))
+		If(guid.TimeUnix(a)).Should().Equal(time.Unix(0, 0))
 }
 
 func TestL(t *testing.T) {
@@ -275,14 +275,30 @@ func TestCodecL(t *testing.T) {
 	}
 }
 
+func TestFromTime(t *testing.T) {
+	for _, drift := range drifts {
+		n := time.Now().Round(10 * time.Millisecond)
+
+		a := guid.FromTime(n, drift)
+		b := guid.ToG(guid.Clock, a)
+
+		x := guid.TimeUnix(a).Round(10 * time.Millisecond)
+		y := guid.TimeUnix(b).Round(10 * time.Millisecond)
+
+		it.Ok(t).
+			If(x).Should().Equal(n).
+			If(y).Should().Equal(n)
+	}
+}
+
 func TestOrdChars(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfNodeID(0xffffffff),
 		guid.ConfClockUnix(),
 	)
 
-	a := guid.String(guid.G(c))
-	b := guid.String(guid.G(c))
+	a := guid.G(c).String()
+	b := guid.G(c).String()
 
 	it.Ok(t).
 		If(a).ShouldNot().Equal(b).
@@ -327,14 +343,12 @@ func TestJSONCodecG(t *testing.T) {
 		If(guid.Eq(val.ID, x.ID)).Should().Equal(true)
 }
 
-/*
-var last *guid.G
+var last *guid.K
 
 func BenchmarkL(b *testing.B) {
-	var val guid.G
+	var val guid.K
 	for i := 0; i < b.N; i++ {
-		val = guid.Seq.G()
+		val = guid.G(guid.Clock)
 	}
 	last = &val
 }
-*/
