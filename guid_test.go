@@ -17,6 +17,7 @@
 package guid_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -222,81 +223,64 @@ func TestLtoG(t *testing.T) {
 	}
 }
 
-/*
 func TestGtoL(t *testing.T) {
 	for _, drift := range drifts {
-		a := guid.Seq.G(drift)
-		b := a.ToL()
+		c := guid.NewLClock(
+			guid.NodeID(0xffffffff),
+			guid.ClockUnix(),
+		)
+
+		a := guid.G(c, drift)
+		b := guid.ToL(a)
 
 		it.Ok(t).
-			If(a.Time()).Should().Equal(b.Time()).
-			If(a.Seq()).Should().Equal(b.Seq())
+			If(guid.Time(b)).Should().Equal(guid.Time(a)).
+			If(guid.Seq(b)).Should().Equal(guid.Seq(a))
 	}
 }
 
 func TestCodecG(t *testing.T) {
 	for i := 0; i <= 31; i++ {
-		node := guid.New(
-			guid.Allocator(1<<i),
-			guid.Clock(func() uint64 { return 0 }),
+		c := guid.NewLClock(
+			guid.NodeID(1<<i),
+			guid.ClockUnix(),
 		)
 
-		a := node.G()
-		b := guid.G{}
-		b.FromBytes(a.Bytes())
+		a := guid.G(c)
+		b := guid.FromBytes(guid.Bytes(a))
+		d := guid.FromString(guid.String(a))
 
-		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
-	}
-}
-
-func TestCodecGBytes(t *testing.T) {
-	for i := 0; i <= 31; i++ {
-		node := guid.New(
-			guid.Allocator(1<<i),
-			guid.Clock(func() uint64 { return 0 }),
-		)
-
-		a := node.G()
-		b := guid.G{}
-		b.FromString(a.String())
-
-		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
+		it.Ok(t).
+			If(guid.Eq(a, b)).Should().Equal(true).
+			If(guid.Eq(a, d)).Should().Equal(true)
 	}
 }
 
 func TestCodecL(t *testing.T) {
 	for i := 0; i <= 31; i++ {
-		node := guid.New(
-			guid.Allocator(1<<i),
-			guid.Clock(func() uint64 { return 0 }),
+		c := guid.NewLClock(
+			guid.NodeID(1<<i),
+			guid.ClockUnix(),
 		)
 
-		a := node.L()
-		b := guid.L{}
-		b.FromBytes(a.Bytes())
+		a := guid.L(c)
+		b := guid.FromBytes(guid.Bytes(a))
+		d := guid.FromString(guid.String(a))
 
-		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
-	}
-}
-
-func TestCodecLBytes(t *testing.T) {
-	for i := 0; i <= 31; i++ {
-		node := guid.New(
-			guid.Allocator(1<<i),
-			guid.Clock(func() uint64 { return 0 }),
-		)
-
-		a := node.L()
-		b := guid.L{}
-		b.FromString(a.String())
-
-		it.Ok(t).If(a.Eq(b)).Should().Equal(true)
+		it.Ok(t).
+			If(guid.Eq(a, b)).Should().Equal(true).
+			If(guid.Eq(a, d)).Should().Equal(true)
 	}
 }
 
 func TestOrdChars(t *testing.T) {
-	a := guid.Seq.G().String()
-	b := guid.Seq.G().String()
+	c := guid.NewLClock(
+		guid.NodeID(0xffffffff),
+		guid.ClockUnix(),
+	)
+
+	a := guid.String(guid.G(c))
+	b := guid.String(guid.G(c))
 
 	it.Ok(t).
 		If(a).ShouldNot().Equal(b).
@@ -305,34 +289,43 @@ func TestOrdChars(t *testing.T) {
 
 func TestJSONCodecL(t *testing.T) {
 	type MyStruct struct {
-		ID guid.L `json:"id"`
+		ID guid.K `json:"id"`
 	}
 
-	val := MyStruct{guid.Seq.L()}
+	c := guid.NewLClock(
+		guid.NodeID(0xffffffff),
+		guid.ClockUnix(),
+	)
+	val := MyStruct{guid.L(c)}
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
 	json.Unmarshal(b, &x)
 
 	it.Ok(t).
-		If(val.ID.Eq(x.ID)).Should().Equal(true)
+		If(guid.Eq(val.ID, x.ID)).Should().Equal(true)
 }
 
 func TestJSONCodecG(t *testing.T) {
 	type MyStruct struct {
-		ID guid.G `json:"id"`
+		ID guid.K `json:"id"`
 	}
 
-	val := MyStruct{guid.Seq.G()}
+	c := guid.NewLClock(
+		guid.NodeID(0xffffffff),
+		guid.ClockUnix(),
+	)
+	val := MyStruct{guid.G(c)}
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
 	json.Unmarshal(b, &x)
 
 	it.Ok(t).
-		If(val.ID.Eq(x.ID)).Should().Equal(true)
+		If(guid.Eq(val.ID, x.ID)).Should().Equal(true)
 }
 
+/*
 var last *guid.G
 
 func BenchmarkL(b *testing.B) {
