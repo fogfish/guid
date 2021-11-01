@@ -29,9 +29,7 @@ decentralized manner for Golang applications</strong></p>
 
 ---
 
-Package guid implements interface to generate k-ordered unique identifiers in lock-free and
-decentralized manner for Golang applications. We says that sequence A is k-ordered if
-it consists of strictly ordered subsequences of length k:
+Package guid implements interface to generate k-ordered unique identifiers in lock-free and decentralized manner for Golang applications. We says that sequence A is k-ordered if it consists of strictly ordered subsequences of length k:
 
 ```
   𝑨[𝒊 − 𝒌] ≤ 𝑨[𝒊] ≤ 𝑨[𝒊 + 𝒌] for all 𝒊 such that 𝒌 < 𝒊 ≤ 𝒏−𝒌.
@@ -42,38 +40,21 @@ it consists of strictly ordered subsequences of length k:
 This library aims important objectives:
 
 * IDs allocation does not require centralized authority or coordination with other nodes.
-* IDs are suitable for partial event ordering in distributed environment and helps on
-detection of causality violation.
+* IDs are suitable for partial event ordering in distributed environment and helps on detection of causality violation.
 * IDs are roughly sortable by allocation order ("time").
 * IDs reduce indexes footprints and optimize lookup latency.
 
 
 ## Inspiration
 
-The event ordering in distributed computing is resolved using various techniques, e.g.
-Lamport timestamps, Universal Unique Identifiers, Twitter Snowflake and many other techniques are offered by open source libraries. `guid` is a Golang port of [Erlang's uid library](https://github.com/fogfish/uid).
+The event ordering in distributed computing is resolved using various techniques, e.g. Lamport timestamps, Universal Unique Identifiers, Twitter Snowflake and many other techniques are offered by open source libraries. `guid` is a Golang port of [Erlang's uid library](https://github.com/fogfish/uid).
 
-All these solution made a common conclusion, globally unique ID is a triple ⟨𝒕, 𝒍, 𝒔⟩:
-⟨𝒕⟩ monotonically increasing clock or timestamp is a primary dimension to roughly sort
-events, ⟨𝒍⟩ is spatially unique identifier of ID allocator so called node location,
-⟨𝒔⟩ sequence is a monotonic integer, which prevents clock collisions. The `guid` library
-addresses few issues observed in other solutions.
+All these solution made a common conclusion, globally unique ID is a triple ⟨𝒕, 𝒍, 𝒔⟩: ⟨𝒕⟩ monotonically increasing clock or timestamp is a primary dimension to roughly sort events, ⟨𝒍⟩ is spatially unique identifier of ID allocator so called node location, ⟨𝒔⟩ sequence is a monotonic integer, which prevents clock collisions. The `guid` library addresses few issues observed in other solutions.
 
-Every byte counts when application is processing or storing large volume of events.
-This library implements fixed size 96-bit identity schema, which is castable to 64-bit
-under certain occasion. It is about 25% improvement to compare with UUID or similar 128-bit
-identity schemas (only Twitters Snowflake is 64-bit).
+Every byte counts when application is processing or storing large volume of events. This library implements fixed size 96-bit identity schema, which is castable to 64-bit under certain occasion. It is about 25% improvement to compare with UUID or similar 128-bit identity schemas (only Twitters Snowflake is 64-bit).
 
-Most of identity schemas uses monotonically increasing clock (timestamp) to roughly order
-events. The resolution of clock varies from nanoseconds to milliseconds. We found that
-usage of timestamp is not perfectly aligned with the goal of decentralized ID allocations.
-Usage of time synchronization protocol becomes necessary at distributed systems. Strictly
-speaking, NTP server becomes an authority to coordinate clock synchronization. This happens
-because schemas uses time fraction ⟨𝒕⟩ as a primary sorting key. In contrast with other
-libraries, `guid` do not give priority to single fraction of identity triple ⟨𝒕⟩ or ⟨𝒍⟩.
-It uses dynamic schema where the location fraction has higher priority than time only at
-particular precision. It allows to keep ordering consistent even if clocks on other node is
-skewed.
+Most of identity schemas uses monotonically increasing clock (timestamp) to roughly order events. The resolution of clock varies from nanoseconds to milliseconds. We found that usage of timestamp is not perfectly aligned with the goal of decentralized ID allocations. Usage of time synchronization protocol becomes necessary at distributed systems. Strictly speaking, NTP server becomes an authority to coordinate clock synchronization. This happens because schemas uses time fraction ⟨𝒕⟩ as a primary sorting key. In contrast with other
+libraries, `guid` do not give priority to single fraction of identity triple ⟨𝒕⟩ or ⟨𝒍⟩. It uses dynamic schema where the location fraction has higher priority than time only at particular precision. It allows to keep ordering consistent even if clocks on other node is skewed.
 
 ## Identity Schema
 
@@ -85,28 +66,16 @@ A fixed size of 96-bit is used to implement identity schema
    ⟨𝒅⟩        ⟨𝒕⟩                ⟨𝒍⟩         ⟨𝒕⟩     ⟨𝒔⟩
 ```
 
-↣ ⟨𝒕⟩ is 47-bit UTC timestamp with millisecond precision. It is derived from nanosecond
-UNIX timesamp by shifting it by 17 bits (time.Now().UnixNano() << 17). The library is
-able to change the base timestamp to any value in-order to address Year 2038 problem.
+↣ ⟨𝒕⟩ is 47-bit UTC timestamp with millisecond precision. It is derived from nanosecond UNIX timestamp by shifting it by 17 bits (time.Now().UnixNano() << 17). The library is able to change the base timestamp to any value in-order to address Year 2038 problem.
 
-↣ ⟨𝒍⟩ is 32-bits node/allocator identifier. It is allocated randomly to each node using
-cryptographic random generator or application provided value. The node identity has higher
-sorting priority than seconds faction of timestamp. This allows to order events if clock
-drifts on nodes. The random allocation give an application ability to introduce about 65K
-allocators before it meets a high probability of collisions.
+↣ ⟨𝒍⟩ is 32-bits node/allocator identifier. It is allocated randomly to each node using cryptographic random generator or application provided value. The node identity has higher sorting priority than seconds faction of timestamp. This allows to order events if clock drifts on nodes. The random allocation give an application ability to introduce about 65K allocators before it meets a high probability of collisions.
 
-↣ ⟨𝒅⟩ is 3 drift bits defines allowed clock drift. It shows the value of less important
-faction of time. The value supports step-wise drift from 30 seconds to 36 minutes.
+↣ ⟨𝒅⟩ is 3 drift bits defines allowed clock drift. It shows the value of less important faction of time. The value supports step-wise drift from 30 seconds to 36 minutes.
 
-↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions
-when multiple events happens during single millisecond or when the clock set backwards.
-The 14-bit value allows to have about 16K allocations per millisecond and over 10M per second
-on single node. Each instance of application process runs a unique sequence of integers.
-The implementation ensures that the same integer is not returned more than once on the current
+↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happens during single millisecond or when the clock set backwards. The 14-bit value allows to have about 16K allocations per millisecond and over 10M per second on single node. Each instance of application process runs a unique sequence of integers. The implementation ensures that the same integer is not returned more than once on the current
 process. Restart of the process resets the sequence.
 
-The library supports casting of 96-bit identifier to 64-bit by dropping ⟨𝒍⟩ fraction. This
-optimization reduces a storage footprint if application uses persistent allocators.
+The library supports casting of 96-bit identifier to 64-bit by dropping ⟨𝒍⟩ fraction. This optimization reduces a storage footprint if application uses persistent allocators.
 
 ```
   3bit        47 bit            14 bit
@@ -116,26 +85,32 @@ optimization reduces a storage footprint if application uses persistent allocato
 
 ## Getting started
 
-The latest version of the library is available at `master` branch. All development, including new features and bug fixes, take place on the `master` branch using forking and pull requests as described in contribution guidelines. Here is minimal example (also available in [playground](https://play.golang.org/p/RccgzbBqy9P)):
+The latest version of the library is available at `main` branch. All development, including new features and bug fixes, take place on the `main` branch using forking and pull requests as described in contribution guidelines.  The stable version is available via Golang modules.
+
+Here is minimal example (also available in [playground](https://play.golang.org/p/RccgzbBqy9P)):
 
 ```go
 package main
 
 import (
+  "time",
+
 	"github.com/fogfish/guid"
 )
 
 func main() {
-  // Use default ID allocator
-  a := guid.Seq.G()
-  b := guid.Seq.G()
-  fmt.Printf("%s < %s is %v\n", a.Chars(), b.Chars(), a.Lt(b))
+  // guid.Clock is default logical clock
+  a := guid.G.K(guid.Clock)
+  time.Sleep(1 * time.Second)
+  b := guid.G.K(guid.Clock)
+  fmt.Printf("%s < %s is %v\n", a.String(), b.String(), guid.G.Lt(a, b))
 	
-  // Use custom ID allocator
-  seq := guid.New(guid.Allocator(0xffffffff))
-  c := seq.G()
-  d := seq.G()
-  fmt.Printf("%s < %s is %v\n", c.Chars(), d.Chars(), c.Lt(d))
+  // Use custom logical clock
+  clock := guid.NewLClock(guid.ConfNodeID(0xffffffff))
+  c := seq.G.K(clock)
+  time.Sleep(1 * time.Second)
+  d := seq.G.K(clock)
+  fmt.Printf("%s < %s is %v\n", c.String(), d.String(), guid.G.Lt(c, d))
 }
 ```
 
