@@ -45,7 +45,7 @@ func (GUID) Z(clock Chronos, drift ...time.Duration) (uid GID) {
 
 /*
 
-G generate globally unique 96-bit k-order identifier.
+K generate globally unique 96-bit k-order identifier.
 
   3bit  47 bit - 𝒅 bit         32 bit     𝒅 bit  14 bit
   |-|-------------------|----------------|-----|-------|
