@@ -31,10 +31,10 @@ func TestConfNodeID(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfNodeID(0xfedcba98),
 	)
-	a := guid.G(c)
+	a := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Node(a)).Should().Equal(uint64(0xfedcba98))
+		If(guid.G.Node(a)).Should().Equal(uint64(0xfedcba98))
 }
 
 func TestConfNodeFromEnv(t *testing.T) {
@@ -43,82 +43,56 @@ func TestConfNodeFromEnv(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfNodeFromEnv(),
 	)
-	a := guid.G(c)
+	a := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Node(a)).Should().Equal(uint64(0x53051caf))
+		If(guid.G.Node(a)).Should().Equal(uint64(0x53051caf))
 }
 
 func TestConfNodeRand(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfNodeRand(),
 	)
-	a := guid.G(c)
+	a := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Node(a)).ShouldNot().Equal(0)
+		If(guid.G.Node(a)).ShouldNot().Equal(0)
 }
 
 func TestConfClock(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfClock(func() uint64 { return 0xfedcba98 << 16 }),
 	)
-	a := guid.G(c)
+	a := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Time(a)).Should().Equal(uint64(0xfedcba98 << 16))
+		If(guid.G.Time(a)).Should().Equal(uint64(0xfedcba98 << 16))
 }
 
 func TestConfClockUnix(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfClockUnix(),
 	)
-	a := guid.G(c)
-	b := guid.G(c)
+	a := guid.G.K(c)
+	b := guid.G.K(c)
 	time.Sleep(2 * time.Second)
-	d := guid.G(c)
+	d := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Lt(a, b)).Should().Equal(true).
-		If(guid.Lt(b, d)).Should().Equal(true)
+		If(guid.G.Lt(a, b)).Should().Equal(true).
+		If(guid.G.Lt(b, d)).Should().Equal(true)
 }
 
 func TestConfClockInverse(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfClockInverse(),
 	)
-	a := guid.G(c)
-	b := guid.G(c)
+	a := guid.G.K(c)
+	b := guid.G.K(c)
 	time.Sleep(2 * time.Second)
-	d := guid.G(c)
+	d := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Lt(b, a)).Should().Equal(true).
-		If(guid.Lt(d, b)).Should().Equal(true)
-}
-
-func TestTimeUnix(t *testing.T) {
-	n := time.Now().Round(10 * time.Millisecond)
-	c := guid.NewLClock(
-		guid.ConfClock(func() uint64 { return uint64(n.UnixNano()) }),
-	)
-
-	a := guid.G(c)
-	v := guid.TimeUnix(a).Round(10 * time.Millisecond)
-
-	it.Ok(t).
-		If(v).Should().Equal(n)
-}
-
-func TestTimeInverse(t *testing.T) {
-	n := time.Now().Round(10 * time.Millisecond)
-	c := guid.NewLClock(
-		guid.ConfClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }),
-	)
-
-	a := guid.G(c)
-	v := guid.TimeInverse(a).Round(10 * time.Millisecond)
-
-	it.Ok(t).
-		If(v).Should().Equal(n)
+		If(guid.G.Lt(b, a)).Should().Equal(true).
+		If(guid.G.Lt(d, b)).Should().Equal(true)
 }

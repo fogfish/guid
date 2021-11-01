@@ -134,20 +134,3 @@ func ConfClockInverse() Config {
 func inversetime() uint64 {
 	return 0xffffffffffffffff - uint64(time.Now().UnixNano())
 }
-
-/*
-
-TimeUnix convers ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-*/
-func TimeUnix(uid K) time.Time {
-	return time.Unix(0, int64(Time(uid)))
-}
-
-/*
-
-TimeInverse convers ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-*/
-func TimeInverse(uid K) time.Time {
-	t := 0xffffffffffffffff - Time(uid)
-	return time.Unix(0, int64(t))
-}

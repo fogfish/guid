@@ -38,108 +38,32 @@ var drifts []time.Duration = []time.Duration{
 	3600 * time.Second,
 }
 
-func TestZ(t *testing.T) {
+func TestGuidZ(t *testing.T) {
 	c := guid.NewLClock()
-	a := guid.Z(c)
-	b := guid.Z(c)
+	a := guid.G.Z(c)
+	b := guid.G.Z(c)
 
 	it.Ok(t).
-		If(guid.Eq(a, b)).Should().Equal(true).
-		If(guid.Lt(a, b)).ShouldNot().Equal(true).
-		If(guid.Seq(a)).Should().Equal(uint64(0)).
-		If(guid.Time(a)).Should().Equal(uint64(0)).
-		If(guid.TimeUnix(a)).Should().Equal(time.Unix(0, 0))
+		If(guid.G.Eq(a, b)).Should().Equal(true).
+		If(guid.G.Lt(a, b)).ShouldNot().Equal(true).
+		If(guid.G.Seq(a)).Should().Equal(uint64(0)).
+		If(guid.G.Time(a)).Should().Equal(uint64(0)).
+		If(guid.G.EpochT(a)).Should().Equal(time.Unix(0, 0))
 }
 
-func TestL(t *testing.T) {
+func TestGuid(t *testing.T) {
 	c := guid.NewLClock()
-	a := guid.L(c)
-	b := guid.L(c)
+	a := guid.G.K(c)
+	b := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.Eq(a, b)).ShouldNot().Equal(true).
-		If(guid.Lt(a, b)).Should().Equal(true).
-		If(guid.Lt(b, a)).Should().Equal(false).
-		If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1))
+		If(guid.G.Eq(a, b)).ShouldNot().Equal(true).
+		If(guid.G.Lt(a, b)).Should().Equal(true).
+		If(guid.G.Node(a)).Should().Equal(guid.G.Node(b)).
+		If(guid.G.Seq(b) - guid.G.Seq(a)).Should().Equal(uint64(1))
 }
 
-func TestSpecL(t *testing.T) {
-	spec := map[uint64]int64{
-		1 << 16: 0,
-		1 << 17: 1 << 17,
-		1 << 24: 1 << 24,
-		1 << 32: 1 << 32,
-		1 << 62: 1 << 62,
-	}
-
-	for _, d := range drifts {
-		for tc, expect := range spec {
-			c := guid.NewLClock(
-				guid.ConfNodeID(0xffffffff),
-				guid.ConfClock(func() uint64 { return tc }),
-			)
-			a := guid.L(c, d)
-			b := guid.L(c, d)
-
-			it.Ok(t).
-				If(guid.Eq(a, b)).ShouldNot().Equal(true).
-				If(guid.Lt(a, b)).Should().Equal(true).
-				If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1)).
-				If(guid.Time(a) == guid.Time(b)).Should().Equal(true).
-				If(guid.Time(a)).Should().Equal(uint64(expect))
-		}
-	}
-}
-
-func TestDiffL(t *testing.T) {
-	for i, drift := range drifts {
-		c := guid.NewLClock(
-			guid.ConfNodeID(0xffffffff),
-			guid.ConfClock(func() uint64 { return 1 << 17 }),
-		)
-
-		a := guid.L(c, drift)
-		b := guid.L(c, drift)
-		d := guid.Diff(b, a)
-
-		it.Ok(t).
-			If(guid.Seq(d)).Should().Equal(uint64(1)).
-			If(guid.Time(d)).Should().Equal(uint64(0)).
-			If(guid.Bytes(d)).Should().Equal([]byte{byte(i << 5), 0, 0, 0, 0, 0, 0, 1})
-	}
-}
-
-func TestDiffLZ(t *testing.T) {
-	for _, drift := range drifts {
-		c := guid.NewLClock(
-			guid.ConfNodeID(0xffffffff),
-			guid.ConfClock(func() uint64 { return 1 << 17 }),
-		)
-
-		z := guid.Z(c, drift)
-		a := guid.L(c, drift)
-		d := guid.Diff(a, z)
-
-		it.Ok(t).
-			If(guid.Eq(d, a)).Should().Equal(true).
-			If(guid.Seq(d)).Should().Equal(guid.Seq(a)).
-			If(guid.Time(d)).Should().Equal(guid.Time(d))
-	}
-}
-
-func TestG(t *testing.T) {
-	c := guid.NewLClock()
-	a := guid.G(c)
-	b := guid.G(c)
-
-	it.Ok(t).
-		If(guid.Eq(a, b)).ShouldNot().Equal(true).
-		If(guid.Lt(a, b)).Should().Equal(true).
-		If(guid.Node(a)).Should().Equal(guid.Node(b)).
-		If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1))
-}
-
-func TestSpecG(t *testing.T) {
+func TestGuidSpec(t *testing.T) {
 	spec := map[uint64]int64{
 		1 << 16: 0,
 		1 << 17: 1 << 17,
@@ -155,200 +79,171 @@ func TestSpecG(t *testing.T) {
 				guid.ConfNodeID(0xffffffff),
 				guid.ConfClock(func() uint64 { return tc }),
 			)
-			a := guid.G(c, d)
-			b := guid.G(c, d)
+			a := guid.G.K(c, d)
+			b := guid.G.K(c, d)
 
 			it.Ok(t).
-				If(guid.Eq(a, b)).ShouldNot().Equal(true).
-				If(guid.Lt(a, b)).Should().Equal(true).
-				If(guid.Seq(b) - guid.Seq(a)).Should().Equal(uint64(1)).
-				If(guid.Time(a) == guid.Time(b)).Should().Equal(true).
-				If(guid.Time(a)).Should().Equal(uint64(expect))
+				If(guid.G.Eq(a, b)).ShouldNot().Equal(true).
+				If(guid.G.Lt(a, b)).Should().Equal(true).
+				If(guid.G.Seq(b) - guid.G.Seq(a)).Should().Equal(uint64(1)).
+				If(guid.G.Time(a) == guid.G.Time(b)).Should().Equal(true).
+				If(guid.G.Time(a)).Should().Equal(uint64(expect))
 		}
 	}
 }
 
-func TestDiffG(t *testing.T) {
+func TestGuidDiff(t *testing.T) {
 	for i, drift := range drifts[1:] {
 		c := guid.NewLClock(
 			guid.ConfNodeID(0xffffffff),
 			guid.ConfClock(func() uint64 { return 1 << 17 }),
 		)
 
-		a := guid.G(c, drift)
-		b := guid.G(c, drift)
-		d := guid.Diff(b, a)
-		bytes := guid.Bytes(d)
+		a := guid.G.K(c, drift)
+		b := guid.G.K(c, drift)
+		d := guid.G.Diff(b, a)
+		bytes := guid.G.Bytes(d)
 
 		it.Ok(t).
-			If(guid.Seq(d)).Should().Equal(uint64(1)).
-			If(guid.Time(d)).Should().Equal(uint64(0)).
-			If(guid.Node(d)).Should().Equal(uint64(0xffffffff)).
+			If(guid.G.Seq(d)).Should().Equal(uint64(1)).
+			If(guid.G.Time(d)).Should().Equal(uint64(0)).
+			If(guid.G.Node(d)).Should().Equal(uint64(0xffffffff)).
 			If(bytes[0]).Should().Equal(byte((i + 1) << 5)).
 			If(bytes[11]).Should().Equal(byte(1))
 	}
 }
 
-func TestDiffGZ(t *testing.T) {
+func TestGuidDiffZ(t *testing.T) {
 	for _, drift := range drifts[1:] {
 		c := guid.NewLClock(
 			guid.ConfNodeID(0xffffffff),
 			guid.ConfClock(func() uint64 { return 1 << 17 }),
 		)
 
-		z := guid.ToG(c, guid.Z(c, drift))
-		a := guid.G(c, drift)
-		d := guid.Diff(a, z)
+		z := guid.G.Z(c, drift)
+		a := guid.G.K(c, drift)
+		d := guid.G.Diff(a, z)
 
 		it.Ok(t).
-			If(guid.Eq(a, d)).Should().Eq(true).
-			If(guid.Seq(d)).Should().Equal(guid.Seq(a)).
-			If(guid.Time(d)).Should().Equal(guid.Time(a)).
-			If(guid.Node(d)).Should().Equal(guid.Node(a))
+			If(guid.G.Eq(a, d)).Should().Eq(true).
+			If(guid.G.Seq(d)).Should().Equal(guid.G.Seq(a)).
+			If(guid.G.Time(d)).Should().Equal(guid.G.Time(a)).
+			If(guid.G.Node(d)).Should().Equal(guid.G.Node(a))
 	}
 }
 
-func TestLtoG(t *testing.T) {
+func TestGuidFromL(t *testing.T) {
 	for _, drift := range drifts {
 		c := guid.NewLClock(
 			guid.ConfNodeID(0xffffffff),
 			guid.ConfClockUnix(),
 		)
 
-		a := guid.L(c, drift)
-		b := guid.ToG(c, a)
+		a := guid.L.K(c, drift)
+		b := guid.G.FromL(c, a)
 
 		it.Ok(t).
-			If(guid.Time(b)).Should().Equal(guid.Time(a)).
-			If(guid.Seq(b)).Should().Equal(guid.Seq(a)).
-			If(guid.Node(b)).Should().Equal(uint64(0xffffffff))
+			If(guid.G.Time(b)).Should().Equal(guid.L.Time(a)).
+			If(guid.G.Seq(b)).Should().Equal(guid.L.Seq(a)).
+			If(guid.G.Node(b)).Should().Equal(uint64(0xffffffff))
 	}
 }
 
-func TestGtoL(t *testing.T) {
-	for _, drift := range drifts {
-		c := guid.NewLClock(
-			guid.ConfNodeID(0xffffffff),
-			guid.ConfClockUnix(),
-		)
-
-		a := guid.G(c, drift)
-		b := guid.ToL(a)
-
-		it.Ok(t).
-			If(guid.Time(b)).Should().Equal(guid.Time(a)).
-			If(guid.Seq(b)).Should().Equal(guid.Seq(a))
-	}
-}
-
-func TestCodecG(t *testing.T) {
+func TestGuidCodec(t *testing.T) {
 	for i := 0; i <= 31; i++ {
 		c := guid.NewLClock(
 			guid.ConfNodeID(1<<i),
 			guid.ConfClockUnix(),
 		)
 
-		a := guid.G(c)
-		b := guid.FromBytes(guid.Bytes(a))
-		d := guid.FromString(guid.String(a))
+		a := guid.G.K(c)
+		b := guid.G.FromBytes(guid.G.Bytes(a))
+		d := guid.G.FromString(guid.G.String(a))
 
 		it.Ok(t).
-			If(guid.Eq(a, b)).Should().Equal(true).
-			If(guid.Eq(a, d)).Should().Equal(true)
+			If(guid.G.Eq(a, b)).Should().Equal(true).
+			If(guid.G.Eq(a, d)).Should().Equal(true)
 	}
 }
 
-func TestCodecL(t *testing.T) {
-	for i := 0; i <= 31; i++ {
-		c := guid.NewLClock(
-			guid.ConfNodeID(1<<i),
-			guid.ConfClockUnix(),
-		)
-
-		a := guid.L(c)
-		b := guid.FromBytes(guid.Bytes(a))
-		d := guid.FromString(guid.String(a))
-
-		it.Ok(t).
-			If(guid.Eq(a, b)).Should().Equal(true).
-			If(guid.Eq(a, d)).Should().Equal(true)
-	}
-}
-
-func TestFromTime(t *testing.T) {
+func TestGuidFromT(t *testing.T) {
 	for _, drift := range drifts {
 		n := time.Now().Round(10 * time.Millisecond)
 
-		a := guid.FromTime(n, drift)
-		b := guid.ToG(guid.Clock, a)
-
-		x := guid.TimeUnix(a).Round(10 * time.Millisecond)
-		y := guid.TimeUnix(b).Round(10 * time.Millisecond)
+		a := guid.L.FromT(n, drift)
+		b := guid.G.FromL(guid.Clock, a)
+		v := guid.G.EpochT(b).Round(10 * time.Millisecond)
 
 		it.Ok(t).
-			If(x).Should().Equal(n).
-			If(y).Should().Equal(n)
+			If(v).Should().Equal(n)
 	}
 }
 
-func TestOrdChars(t *testing.T) {
+func TestGuidEpochT(t *testing.T) {
+	n := time.Now().Round(10 * time.Millisecond)
+	c := guid.NewLClock(
+		guid.ConfClock(func() uint64 { return uint64(n.UnixNano()) }),
+	)
+
+	a := guid.G.K(c)
+	v := guid.G.EpochT(a).Round(10 * time.Millisecond)
+
+	it.Ok(t).
+		If(v).Should().Equal(n)
+}
+
+func TestGuidEpochI(t *testing.T) {
+	n := time.Now().Round(10 * time.Millisecond)
+	c := guid.NewLClock(
+		guid.ConfClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }),
+	)
+
+	a := guid.G.K(c)
+	v := guid.G.EpochI(a).Round(10 * time.Millisecond)
+
+	it.Ok(t).
+		If(v).Should().Equal(n)
+}
+
+func TestGuidLexSorting(t *testing.T) {
 	c := guid.NewLClock(
 		guid.ConfNodeID(0xffffffff),
 		guid.ConfClockUnix(),
 	)
 
-	a := guid.G(c).String()
-	b := guid.G(c).String()
+	a := guid.G.K(c).String()
+	b := guid.G.K(c).String()
 
 	it.Ok(t).
 		If(a).ShouldNot().Equal(b).
 		If(a).Should().Be().Less(b)
 }
 
-func TestJSONCodecL(t *testing.T) {
+func TestGuidJSONCodec(t *testing.T) {
 	type MyStruct struct {
-		ID guid.K `json:"id"`
+		ID guid.GID `json:"id"`
 	}
 
 	c := guid.NewLClock(
 		guid.ConfNodeID(0xffffffff),
 		guid.ConfClockUnix(),
 	)
-	val := MyStruct{guid.L(c)}
+	val := MyStruct{guid.G.K(c)}
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
 	json.Unmarshal(b, &x)
 
 	it.Ok(t).
-		If(guid.Eq(val.ID, x.ID)).Should().Equal(true)
+		If(guid.G.Eq(val.ID, x.ID)).Should().Equal(true)
 }
 
-func TestJSONCodecG(t *testing.T) {
-	type MyStruct struct {
-		ID guid.K `json:"id"`
-	}
+// var last *guid.K
 
-	c := guid.NewLClock(
-		guid.ConfNodeID(0xffffffff),
-		guid.ConfClockUnix(),
-	)
-	val := MyStruct{guid.G(c)}
-	b, _ := json.Marshal(val)
-
-	var x MyStruct
-	json.Unmarshal(b, &x)
-
-	it.Ok(t).
-		If(guid.Eq(val.ID, x.ID)).Should().Equal(true)
-}
-
-var last *guid.K
-
-func BenchmarkL(b *testing.B) {
-	var val guid.K
-	for i := 0; i < b.N; i++ {
-		val = guid.G(guid.Clock)
-	}
-	last = &val
-}
+// func BenchmarkL(b *testing.B) {
+// 	var val guid.K
+// 	for i := 0; i < b.N; i++ {
+// 		val = guid.G(guid.Clock)
+// 	}
+// 	last = &val
+// }

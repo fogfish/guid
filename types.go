@@ -57,12 +57,18 @@ type Config func(*LClock)
 
 /*
 
-K is native representation of k-ordered number both local and global formats.
-
-The Golang struct takes 128-bits but the library effectively uses either 64-bits
-or 96-bits. The serialization ensures that right amount of bits is used.
+GID is native representation of k-ordered number (global format).
+It is 96-bit long and requires no central registration process.
+Note: Golang struct is 128-bits but only 96-bits are used effectively.
+The serialization process ensures that only 96-bits are used.
 */
-type K struct{ hi, lo uint64 }
+type GID struct{ hi, lo uint64 }
+
+/*
+
+LID is native representation of k-ordered number (local format).
+*/
+type LID struct{ lo uint64 }
 
 /*
 
