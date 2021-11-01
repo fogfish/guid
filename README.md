@@ -10,15 +10,15 @@ decentralized manner for Golang applications</strong></p>
     </a>
     <!-- Build Status  -->
     <a href="http://travis-ci.org/fogfish/guid">
-      <img src="https://secure.travis-ci.org/fogfish/guid.svg?branch=master" />
+      <img src="https://secure.travis-ci.org/fogfish/guid.svg?branch=main" />
     </a>
     <!-- GitHub -->
     <a href="http://github.com/fogfish/guid">
       <img src="https://img.shields.io/github/last-commit/fogfish/guid.svg" />
     </a>
     <!-- Coverage -->
-    <a href="https://coveralls.io/github/fogfish/guid?branch=master">
-      <img src="https://coveralls.io/repos/github/fogfish/guid/badge.svg?branch=master" />
+    <a href="https://coveralls.io/github/fogfish/guid?branch=main">
+      <img src="https://coveralls.io/repos/github/fogfish/guid/badge.svg?branch=main" />
     </a>
     <!-- Go Card -->
     <a href="https://goreportcard.com/report/github.com/fogfish/guid">
