@@ -87,12 +87,13 @@ The library supports casting of 96-bit identifier to 64-bit by dropping ⟨𝒍�
 
 The latest version of the library is available at `main` branch. All development, including new features and bug fixes, take place on the `main` branch using forking and pull requests as described in contribution guidelines.  The stable version is available via Golang modules.
 
-Here is minimal example (also available in [playground](https://play.golang.org/p/RccgzbBqy9P)):
+Here is minimal example (also available in [playground](https://play.golang.org/p/l2JA3PWTPwF)):
 
 ```go
 package main
 
 import (
+  "fmt",
   "time",
 
 	"github.com/fogfish/guid"
@@ -107,9 +108,9 @@ func main() {
 	
   // Use custom logical clock
   clock := guid.NewLClock(guid.ConfNodeID(0xffffffff))
-  c := seq.G.K(clock)
+  c := guid.G.K(clock)
   time.Sleep(1 * time.Second)
-  d := seq.G.K(clock)
+  d := guid.G.K(clock)
   fmt.Printf("%s < %s is %v\n", c.String(), d.String(), guid.G.Lt(c, d))
 }
 ```
