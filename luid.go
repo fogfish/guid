@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-// LUID is namespace to manupulate local k-order identity
+// LUID is namespace to manipulate local k-order identity
 type LUID string
 
 // L instance of local k-order identity
@@ -34,17 +34,16 @@ const L LUID = "guid.L"
 
 Z returns "zero" local (64-bit) k-order identifier
 */
-func (LUID) Z(clock Chronos, drift ...time.Duration) (uid LID) {
+func (LUID) Z(clock Chronos, drift ...time.Duration) LID {
 	// all bits are 0 in "zero" unique 64-bit k-order identifier.
 	// but it requites to that 3bit of ⟨𝒅⟩ is set
 	d := (driftInBits(drift) - driftZ) << 61
-	uid.lo = d
-	return
+	return LID(d)
 }
 
 /*
 
-K generates locally unique 64-bit k-order identifier.
+New generates locally unique 64-bit k-order identifier.
 
   3bit        47 bit           14 bit
   |-|------------------------|-------|
@@ -56,20 +55,19 @@ func (LUID) K(clock Chronos, drift ...time.Duration) LID {
 	return mkLUID(driftInBits(drift), t, seq)
 }
 
-func mkLUID(drift, t, seq uint64) (uid LID) {
+func mkLUID(drift, t, seq uint64) LID {
 	d := (drift - driftZ) << 61
 	x := t >> (14 + 3) << 14
 
-	uid.lo = d | x | seq
-	return
+	return LID(d | x | seq)
 }
 
 /*
 
 Eq compares k-order UIDs, returns true if values are equal
 */
-func (LUID) Eq(a, b LID) bool {
-	return a.lo == b.lo
+func (LUID) Equal(a, b LID) bool {
+	return a == b
 }
 
 /*
@@ -77,8 +75,8 @@ func (LUID) Eq(a, b LID) bool {
 Lt compares k-order UIDs, return true if value uid (this) less
 than value b (argument)
 */
-func (LUID) Lt(a, b LID) bool {
-	return a.lo < b.lo
+func (LUID) Less(a, b LID) bool {
+	return a < b
 }
 
 /*
@@ -87,7 +85,7 @@ Time returns ⟨𝒕⟩ timestamp fraction from identifier.
 The returned value is nano seconds compatible with time.Unix(0, uid.Time())
 */
 func (LUID) Time(uid LID) uint64 {
-	return uid.lo << 3 >> (14 + 3) << (14 + 3)
+	return uint64(uid) << 3 >> (14 + 3) << (14 + 3)
 }
 
 /*
@@ -113,7 +111,7 @@ Seq returns ⟨𝒔⟩ sequence value. The value of monotonic unique integer
 at the time of ID creation.
 */
 func (LUID) Seq(uid LID) uint64 {
-	return uid.lo & 0x3fff
+	return uint64(uid) & 0x3fff
 }
 
 /*
@@ -123,7 +121,7 @@ Diff approximates distance between k-order UIDs.
 func (ns LUID) Diff(a, b LID) LID {
 	t := ns.Time(a) - ns.Time(b)
 	s := ns.Seq(a) - ns.Seq(b)
-	d := (a.lo >> 61) + driftZ
+	d := (uint64(a) >> 61) + driftZ
 	return mkLUID(d, t, s)
 }
 
@@ -134,16 +132,16 @@ the value n defines number of bits to extract into each cell.
 */
 // LID & GID LSplit GSplit
 func (LUID) Split(n uint64, uid LID) (bytes []byte) {
-	return split(0, uid.lo, 64, n)
+	return split(0, uint64(uid), 64, n)
 }
 
 /*
 
 Fold composes UID value from byte slice. The operation is inverse to Split.
 */
-func (LUID) Fold(n uint64, bytes []byte) (uid LID) {
-	_, uid.lo = fold(64, n, bytes)
-	return
+func (LUID) Fold(n uint64, bytes []byte) LID {
+	_, lo := fold(64, n, bytes)
+	return LID(lo)
 }
 
 /*
@@ -160,7 +158,7 @@ func (LUID) FromT(t time.Time, drift ...time.Duration) LID {
 FromG casts global (96-bit) k-order value to local (64-bit) one
 */
 func (LUID) FromG(uid GID) LID {
-	d := (uid.hi >> 29) + driftZ
+	d := (uid.Hi >> 29) + driftZ
 	return mkLUID(d, G.Time(uid), G.Seq(uid))
 }
 
@@ -278,5 +276,5 @@ Time returns ⟨𝒕⟩ timestamp fraction from identifier.
 The returned value is nano seconds compatible with time.Unix(0, uid.Time())
 */
 func (uid LID) Time() uint64 {
-	return uid.lo << 3 >> (14 + 3) << (14 + 3)
+	return uint64(uid) << 3 >> (14 + 3) << (14 + 3)
 }

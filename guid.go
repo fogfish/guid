@@ -39,7 +39,7 @@ func (GUID) Z(clock Chronos, drift ...time.Duration) (uid GID) {
 	// all bits are 0 in "zero" unique 64-bit k-order identifier.
 	// but it requites to that 3bit of ⟨𝒅⟩ is set
 	d := (driftInBits(drift) - driftZ) << 61
-	uid.lo = d
+	uid.Lo = d
 	return
 }
 
@@ -62,27 +62,27 @@ func mkGUID(n, drift, t, seq uint64) (uid GID) {
 	nhi, nlo := splitNode(n, drift)
 
 	// Note: with drift = 30 sec, nhi = 0
-	uid.hi = thi | nhi
-	uid.lo = nlo | tlo | seq
+	uid.Hi = thi | nhi
+	uid.Lo = nlo | tlo | seq
 
 	return
 }
 
 /*
 
-Eq compares k-order UIDs, returns true if values are equal
+Equal compares k-order UIDs, returns true if values are equal
 */
-func (GUID) Eq(a, b GID) bool {
-	return a.hi == b.hi && a.lo == b.lo
+func (GUID) Equal(a, b GID) bool {
+	return a.Hi == b.Hi && a.Lo == b.Lo
 }
 
 /*
 
-Lt compares k-order UIDs, return true if value uid (this) less
+Less compares k-order UIDs, return true if value uid (this) less
 than value b (argument)
 */
-func (GUID) Lt(a, b GID) bool {
-	return a.hi <= b.hi && a.lo < b.lo
+func (GUID) Less(a, b GID) bool {
+	return a.Hi <= b.Hi && a.Lo < b.Lo
 }
 
 /*
@@ -97,12 +97,12 @@ func (GUID) Time(uid GID) uint64 {
 	//  ^                         b    ^   a                 ^
 	// 96                             64                     0
 	//
-	d := (uid.hi >> 29) + driftZ
+	d := (uid.Hi >> 29) + driftZ
 	a := 64 - 14 - d
 	b := 32 - a
 
-	hi := (uid.hi >> b) << d
-	lo := (uid.lo << a) >> (64 - d)
+	hi := (uid.Hi >> b) << d
+	lo := (uid.Lo << a) >> (64 - d)
 
 	t := ((hi | lo) << (14 + 3))
 	return t //& 0x7fffffffffffffff
@@ -136,12 +136,12 @@ func (GUID) Node(uid GID) uint64 {
 	//  ^                         b    ^   a                 ^
 	// 96                             64                     0
 	//
-	d := (uid.hi >> 29) + driftZ
+	d := (uid.Hi >> 29) + driftZ
 	a := 64 - 14 - d
 	b := 32 - a
 
-	lo := uid.lo >> (d + 14)
-	hi := uid.hi << (64 - b) >> (64 - b - a)
+	lo := uid.Lo >> (d + 14)
+	hi := uid.Hi << (64 - b) >> (64 - b - a)
 
 	return hi | lo
 }
@@ -152,7 +152,7 @@ Seq returns ⟨𝒔⟩ sequence value. The value of monotonic unique integer
 at the time of ID creation.
 */
 func (GUID) Seq(uid GID) uint64 {
-	return uid.lo & 0x3fff
+	return uid.Lo & 0x3fff
 }
 
 /*
@@ -162,7 +162,7 @@ Diff approximates distance between k-order UIDs.
 func (ns GUID) Diff(a, b GID) GID {
 	t := ns.Time(a) - ns.Time(b)
 	s := ns.Seq(a) - ns.Seq(b)
-	d := (a.hi >> 29) + driftZ
+	d := (a.Hi >> 29) + driftZ
 	return mkGUID(ns.Node(a), d, t, s)
 }
 
@@ -172,7 +172,7 @@ Split decomposes UID value to bytes slice. The funcion acts as binary comprehens
 the value n defines number of bits to extract into each cell.
 */
 func (GUID) Split(n uint64, uid GID) (bytes []byte) {
-	return split(uid.hi, uid.lo, 96, n)
+	return split(uid.Hi, uid.Lo, 96, n)
 }
 
 /*
@@ -180,7 +180,7 @@ func (GUID) Split(n uint64, uid GID) (bytes []byte) {
 Fold composes UID value from byte slice. The operation is inverse to Split.
 */
 func (GUID) Fold(n uint64, bytes []byte) (uid GID) {
-	uid.hi, uid.lo = fold(96, n, bytes)
+	uid.Hi, uid.Lo = fold(96, n, bytes)
 	return
 }
 
@@ -189,7 +189,7 @@ func (GUID) Fold(n uint64, bytes []byte) (uid GID) {
 FromL casts local (64-bit) k-order UID to global (96-bit) one
 */
 func (ns GUID) FromL(clock Chronos, uid LID) GID {
-	d := (uid.lo >> 61) + driftZ
+	d := (uint64(uid) >> 61) + driftZ
 	return mkGUID(clock.L(), d, L.Time(uid), L.Seq(uid))
 }
 

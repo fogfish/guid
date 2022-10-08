@@ -1,5 +1,5 @@
 module github.com/fogfish/guid
 
-go 1.17
+go 1.18
 
 require github.com/fogfish/it v0.9.1

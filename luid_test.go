@@ -33,8 +33,8 @@ func TestLuidZ(t *testing.T) {
 	b := guid.L.Z(c)
 
 	it.Ok(t).
-		If(guid.L.Eq(a, b)).Should().Equal(true).
-		If(guid.L.Lt(a, b)).ShouldNot().Equal(true).
+		If(guid.L.Equal(a, b)).Should().Equal(true).
+		If(guid.L.Less(a, b)).ShouldNot().Equal(true).
 		If(guid.L.Seq(a)).Should().Equal(uint64(0)).
 		If(guid.L.Time(a)).Should().Equal(uint64(0)).
 		If(guid.L.EpochT(a)).Should().Equal(time.Unix(0, 0))
@@ -46,9 +46,9 @@ func TestLuid(t *testing.T) {
 	b := guid.L.K(c)
 
 	it.Ok(t).
-		If(guid.L.Eq(a, b)).ShouldNot().Equal(true).
-		If(guid.L.Lt(a, b)).Should().Equal(true).
-		If(guid.L.Lt(b, a)).Should().Equal(false).
+		If(guid.L.Equal(a, b)).ShouldNot().Equal(true).
+		If(guid.L.Less(a, b)).Should().Equal(true).
+		If(guid.L.Less(b, a)).Should().Equal(false).
 		If(guid.L.Seq(b) - guid.L.Seq(a)).Should().Equal(uint64(1))
 }
 
@@ -71,8 +71,8 @@ func TestLuidSpec(t *testing.T) {
 			b := guid.L.K(c, d)
 
 			it.Ok(t).
-				If(guid.L.Eq(a, b)).ShouldNot().Equal(true).
-				If(guid.L.Lt(a, b)).Should().Equal(true).
+				If(guid.L.Equal(a, b)).ShouldNot().Equal(true).
+				If(guid.L.Less(a, b)).Should().Equal(true).
 				If(guid.L.Seq(b) - guid.L.Seq(a)).Should().Equal(uint64(1)).
 				If(guid.L.Time(a) == guid.L.Time(b)).Should().Equal(true).
 				If(guid.L.Time(a)).Should().Equal(uint64(expect))
@@ -110,7 +110,7 @@ func TestLuidDiffZ(t *testing.T) {
 		d := guid.L.Diff(a, z)
 
 		it.Ok(t).
-			If(guid.L.Eq(d, a)).Should().Equal(true).
+			If(guid.L.Equal(d, a)).Should().Equal(true).
 			If(guid.L.Seq(d)).Should().Equal(guid.L.Seq(a)).
 			If(guid.L.Time(d)).Should().Equal(guid.L.Time(d))
 	}
@@ -144,8 +144,8 @@ func TestLuidCodec(t *testing.T) {
 		d := guid.L.FromString(guid.L.String(a))
 
 		it.Ok(t).
-			If(guid.L.Eq(a, b)).Should().Equal(true).
-			If(guid.L.Eq(a, d)).Should().Equal(true)
+			If(guid.L.Equal(a, b)).Should().Equal(true).
+			If(guid.L.Equal(a, d)).Should().Equal(true)
 	}
 }
 
@@ -217,5 +217,5 @@ func TestLuidJSONCodec(t *testing.T) {
 	json.Unmarshal(b, &x)
 
 	it.Ok(t).
-		If(guid.L.Eq(val.ID, x.ID)).Should().Equal(true)
+		If(guid.L.Equal(val.ID, x.ID)).Should().Equal(true)
 }
