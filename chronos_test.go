@@ -79,8 +79,8 @@ func TestConfClockUnix(t *testing.T) {
 	d := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.G.Lt(a, b)).Should().Equal(true).
-		If(guid.G.Lt(b, d)).Should().Equal(true)
+		If(guid.G.Less(a, b)).Should().Equal(true).
+		If(guid.G.Less(b, d)).Should().Equal(true)
 }
 
 func TestConfClockInverse(t *testing.T) {
@@ -93,6 +93,6 @@ func TestConfClockInverse(t *testing.T) {
 	d := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.G.Lt(b, a)).Should().Equal(true).
-		If(guid.G.Lt(d, b)).Should().Equal(true)
+		If(guid.G.Less(b, a)).Should().Equal(true).
+		If(guid.G.Less(d, b)).Should().Equal(true)
 }

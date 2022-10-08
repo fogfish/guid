@@ -62,13 +62,13 @@ It is 96-bit long and requires no central registration process.
 Note: Golang struct is 128-bits but only 96-bits are used effectively.
 The serialization process ensures that only 96-bits are used.
 */
-type GID struct{ hi, lo uint64 }
+type GID struct{ Hi, Lo uint64 }
 
 /*
 
 LID is native representation of k-ordered number (local format).
 */
-type LID struct{ lo uint64 }
+type LID uint64
 
 /*
 

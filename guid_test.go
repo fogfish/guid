@@ -44,8 +44,8 @@ func TestGuidZ(t *testing.T) {
 	b := guid.G.Z(c)
 
 	it.Ok(t).
-		If(guid.G.Eq(a, b)).Should().Equal(true).
-		If(guid.G.Lt(a, b)).ShouldNot().Equal(true).
+		If(guid.G.Equal(a, b)).Should().Equal(true).
+		If(guid.G.Less(a, b)).ShouldNot().Equal(true).
 		If(guid.G.Seq(a)).Should().Equal(uint64(0)).
 		If(guid.G.Time(a)).Should().Equal(uint64(0)).
 		If(guid.G.EpochT(a)).Should().Equal(time.Unix(0, 0))
@@ -57,8 +57,8 @@ func TestGuid(t *testing.T) {
 	b := guid.G.K(c)
 
 	it.Ok(t).
-		If(guid.G.Eq(a, b)).ShouldNot().Equal(true).
-		If(guid.G.Lt(a, b)).Should().Equal(true).
+		If(guid.G.Equal(a, b)).ShouldNot().Equal(true).
+		If(guid.G.Less(a, b)).Should().Equal(true).
 		If(guid.G.Node(a)).Should().Equal(guid.G.Node(b)).
 		If(guid.G.Seq(b) - guid.G.Seq(a)).Should().Equal(uint64(1))
 }
@@ -83,8 +83,8 @@ func TestGuidSpec(t *testing.T) {
 			b := guid.G.K(c, d)
 
 			it.Ok(t).
-				If(guid.G.Eq(a, b)).ShouldNot().Equal(true).
-				If(guid.G.Lt(a, b)).Should().Equal(true).
+				If(guid.G.Equal(a, b)).ShouldNot().Equal(true).
+				If(guid.G.Less(a, b)).Should().Equal(true).
 				If(guid.G.Seq(b) - guid.G.Seq(a)).Should().Equal(uint64(1)).
 				If(guid.G.Time(a) == guid.G.Time(b)).Should().Equal(true).
 				If(guid.G.Time(a)).Should().Equal(uint64(expect))
@@ -125,7 +125,7 @@ func TestGuidDiffZ(t *testing.T) {
 		d := guid.G.Diff(a, z)
 
 		it.Ok(t).
-			If(guid.G.Eq(a, d)).Should().Eq(true).
+			If(guid.G.Equal(a, d)).Should().Eq(true).
 			If(guid.G.Seq(d)).Should().Equal(guid.G.Seq(a)).
 			If(guid.G.Time(d)).Should().Equal(guid.G.Time(a)).
 			If(guid.G.Node(d)).Should().Equal(guid.G.Node(a))
@@ -161,8 +161,8 @@ func TestGuidCodec(t *testing.T) {
 		d := guid.G.FromString(guid.G.String(a))
 
 		it.Ok(t).
-			If(guid.G.Eq(a, b)).Should().Equal(true).
-			If(guid.G.Eq(a, d)).Should().Equal(true)
+			If(guid.G.Equal(a, b)).Should().Equal(true).
+			If(guid.G.Equal(a, d)).Should().Equal(true)
 	}
 }
 
@@ -235,7 +235,7 @@ func TestGuidJSONCodec(t *testing.T) {
 	json.Unmarshal(b, &x)
 
 	it.Ok(t).
-		If(guid.G.Eq(val.ID, x.ID)).Should().Equal(true)
+		If(guid.G.Equal(val.ID, x.ID)).Should().Equal(true)
 }
 
 // var last *guid.K

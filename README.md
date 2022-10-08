@@ -9,8 +9,8 @@ decentralized manner for Golang applications</strong></p>
       <img src="https://godoc.org/github.com/fogfish/guid?status.svg" />
     </a>
     <!-- Build Status  -->
-    <a href="http://travis-ci.org/fogfish/guid">
-      <img src="https://secure.travis-ci.org/fogfish/guid.svg?branch=main" />
+    <a href="https://github.com/fogfish/guid/actions/">
+      <img src="https://github.com/fogfish/guid/workflows/test/badge.svg?branch=main" />
     </a>
     <!-- GitHub -->
     <a href="http://github.com/fogfish/guid">
@@ -53,8 +53,7 @@ All these solution made a common conclusion, globally unique ID is a triple ⟨�
 
 Every byte counts when application is processing or storing large volume of events. This library implements fixed size 96-bit identity schema, which is castable to 64-bit under certain occasion. It is about 25% improvement to compare with UUID or similar 128-bit identity schemas (only Twitters Snowflake is 64-bit).
 
-Most of identity schemas uses monotonically increasing clock (timestamp) to roughly order events. The resolution of clock varies from nanoseconds to milliseconds. We found that usage of timestamp is not perfectly aligned with the goal of decentralized ID allocations. Usage of time synchronization protocol becomes necessary at distributed systems. Strictly speaking, NTP server becomes an authority to coordinate clock synchronization. This happens because schemas uses time fraction ⟨𝒕⟩ as a primary sorting key. In contrast with other
-libraries, `guid` do not give priority to single fraction of identity triple ⟨𝒕⟩ or ⟨𝒍⟩. It uses dynamic schema where the location fraction has higher priority than time only at particular precision. It allows to keep ordering consistent even if clocks on other node is skewed.
+Most of identity schemas uses monotonically increasing clock (timestamp) to roughly order events. The resolution of clock varies from nanoseconds to milliseconds. We found that usage of timestamp is not perfectly aligned with the goal of decentralized ID allocations. Usage of time synchronization protocol becomes necessary at distributed systems. Strictly speaking, NTP server becomes an authority to coordinate clock synchronization. This happens because schemas uses time fraction ⟨𝒕⟩ as a primary sorting key. In contrast with other libraries, `guid` do not give priority to single fraction of identity triple ⟨𝒕⟩ or ⟨𝒍⟩. It uses dynamic schema where the location fraction has higher priority than time only at particular precision. It allows to keep ordering consistent even if clocks on other node is skewed.
 
 ## Identity Schema
 
