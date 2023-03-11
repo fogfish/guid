@@ -289,7 +289,7 @@ func TestCodecG(t *testing.T) {
 			it.Equiv(b, a),
 		)
 
-		d, err := guid.FromString(guid.String(a))
+		d, err := guid.FromStringG(guid.String(a))
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equiv(d, a),
@@ -312,7 +312,7 @@ func TestCodecL(t *testing.T) {
 			it.Equiv(b, a),
 		)
 
-		d, err := guid.FromString(guid.String(a))
+		d, err := guid.FromStringL(guid.String(a))
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equiv(d, a),
@@ -411,14 +411,15 @@ func TestSplit(t *testing.T) {
 
 func TestJSONCodec(t *testing.T) {
 	type MyStruct struct {
-		ID guid.GID `json:"id"`
+		G guid.GID `json:"g"`
+		L guid.GID `json:"l"`
 	}
 
 	c := guid.NewClock(
 		guid.WithNodeID(0xffffffff),
 		guid.WithClockUnix(),
 	)
-	val := MyStruct{guid.G(c)}
+	val := MyStruct{G: guid.G(c), L: guid.L(c)}
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
@@ -426,7 +427,8 @@ func TestJSONCodec(t *testing.T) {
 
 	it.Then(t).Should(
 		it.Nil(err),
-		it.Equal(val.ID, x.ID),
+		it.Equal(val.G, x.G),
+		it.Equal(val.L, x.L),
 	)
 }
 
@@ -435,12 +437,16 @@ func TestJSONCodecFailed(t *testing.T) {
 		ID guid.GID `json:"id"`
 	}
 
-	var x MyStruct
-	err := json.Unmarshal([]byte(`{"id":100}`), &x)
-
-	it.Then(t).ShouldNot(
-		it.Nil(err),
-	)
+	for _, tt := range []string{
+		`{"id":100}`,
+		`{"id":"*****"}`,
+	} {
+		var x MyStruct
+		err := json.Unmarshal([]byte(tt), &x)
+		it.Then(t).ShouldNot(
+			it.Nil(err),
+		)
+	}
 }
 
 var (

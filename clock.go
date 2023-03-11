@@ -34,8 +34,6 @@ type Chronos interface {
 
 // Clock is global default instance of logical clock
 //
-// TODO: config
-//
 // If the application needs own default clock e.g. inverse one, it declares own
 // clock and pair of GID & LID functions.
 var Clock Chronos = NewClock()

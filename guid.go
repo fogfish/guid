@@ -43,12 +43,27 @@ func (uid *GID) UnmarshalJSON(b []byte) (err error) {
 	if err = json.Unmarshal(b, &val); err != nil {
 		return
 	}
-	*uid, err = FromString(val)
+
+	if val[0] == '*' {
+		*uid, err = FromStringG(val[1:])
+		if err != nil {
+			return err
+		}
+
+		*uid = ToL(*uid)
+		return nil
+	}
+
+	*uid, err = FromStringG(val)
 	return err
 }
 
 // MarshalJSON encodes k-ordered value to lexicographically sortable JSON strings
 func (uid GID) MarshalJSON() (bytes []byte, err error) {
+	if uid.Local {
+		return json.Marshal("*" + String(FromL(Clock, uid)))
+	}
+
 	return json.Marshal(String(uid))
 }
 
@@ -302,36 +317,35 @@ func FromBytes(val []byte) (GID, error) {
 func String(uid GID) string {
 	var (
 		buf [16]byte // interim buffer where uid is split as seq of bytes
-		enc [18]byte // output encoded string
+		enc [16]byte // output encoded string
 		bfs = buf[:]
 	)
 
 	if uid.Local {
-		enc[0] = 'l'
 		split(0, uid.Lo, 64, 4, bfs)
 	} else {
-		enc[0] = 'g'
 		split(uid.Hi, uid.Lo, 96, 6, bfs)
 	}
-	enc[1] = ':'
 
 	encode64(buf, &enc)
 	str := enc[:]
 	return *(*string)(unsafe.Pointer(&str))
 }
 
-// FromString decodes converts k-order UID from lexicographically sortable strings
-func FromString(val string) (GID, error) {
-	if len(val) != 18 {
+// FromStringG decodes converts k-order UID from lexicographically sortable strings
+func FromStringG(val string) (GID, error) {
+	if len(val) != 16 {
 		return GID{}, fmt.Errorf("malformed k-order number: %v", val)
 	}
 
-	switch val[0] {
-	case 'g':
-		return FoldG(6, decode64(val[2:])), nil
-	case 'l':
-		return FoldL(4, decode64(val[2:])), nil
-	default:
+	return FoldG(6, decode64(val)), nil
+}
+
+// FromStringL decodes converts k-order UID from lexicographically sortable strings
+func FromStringL(val string) (GID, error) {
+	if len(val) != 16 {
 		return GID{}, fmt.Errorf("malformed k-order number: %v", val)
 	}
+
+	return FoldL(4, decode64(val)), nil
 }

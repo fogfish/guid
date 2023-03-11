@@ -20,9 +20,9 @@ package guid
 
 var alphabet []byte = []byte(".0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz")
 
-func encode64(in [16]byte, out *[18]byte) {
+func encode64(in [16]byte, out *[16]byte) {
 	for i := 0; i < len(in); i++ {
-		out[i+2] = alphabet[in[i]]
+		out[i] = alphabet[in[i]]
 	}
 }
 
