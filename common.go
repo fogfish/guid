@@ -95,9 +95,6 @@ func splitNode(node, drift uint64) (uint64, uint64) {
 
 func split(hi, lo, size, n uint64, bytes []byte) {
 	hilo := uint64(64) // hi | lo division at
-	// bytes = alloc(size, n)
-	// make([]byte, size/n)
-
 	mask := uint64(1<<n) - 1
 	i := 0
 
@@ -116,8 +113,6 @@ func split(hi, lo, size, n uint64, bytes []byte) {
 		}
 		i++
 	}
-
-	return
 }
 
 func fold(size, n uint64, bytes []byte) (hi, lo uint64) {

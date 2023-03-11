@@ -394,6 +394,21 @@ func TestLexSorting(t *testing.T) {
 	)
 }
 
+func TestSplit(t *testing.T) {
+	c := guid.NewClock(
+		guid.WithNodeID(0xffffffff),
+		guid.WithClockUnix(),
+	)
+
+	a := guid.G(c)
+	b := guid.L(c)
+
+	it.Then(t).Should(
+		it.Equiv(guid.Bytes(a), guid.Split(8, a)),
+		it.Equiv(guid.Bytes(b), guid.Split(8, b)),
+	)
+}
+
 func TestJSONCodec(t *testing.T) {
 	type MyStruct struct {
 		ID guid.GID `json:"id"`
