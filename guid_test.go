@@ -289,7 +289,7 @@ func TestCodecG(t *testing.T) {
 			it.Equiv(b, a),
 		)
 
-		d, err := guid.FromString(guid.String(a))
+		d, err := guid.FromStringG(guid.String(a))
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equiv(d, a),
@@ -312,7 +312,7 @@ func TestCodecL(t *testing.T) {
 			it.Equiv(b, a),
 		)
 
-		d, err := guid.FromString(guid.String(a))
+		d, err := guid.FromStringL(guid.String(a))
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equiv(d, a),
