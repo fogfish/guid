@@ -82,6 +82,8 @@ func TestL(t *testing.T) {
 	).Should(
 		it.True(guid.Before(a, b)),
 		it.True(guid.After(b, a)),
+		it.Equal(guid.Node(a), guid.Node(b)),
+		it.Equal(guid.Node(a), 0),
 		it.Equal(guid.Seq(b)-guid.Seq(a), 1),
 	)
 }
@@ -236,14 +238,18 @@ func TestFromL(t *testing.T) {
 			guid.WithClockUnix(),
 		)
 
-		a := guid.L(c, drift)
-		b := guid.FromL(c, a)
+		for _, a := range []guid.GID{
+			guid.L(c, drift),
+			guid.G(c, drift),
+		} {
+			b := guid.FromL(c, a)
 
-		it.Then(t).Should(
-			it.Equal(guid.Time(b), guid.Time(a)),
-			it.Equal(guid.Seq(b), guid.Seq(a)),
-			it.Equal(guid.Node(b), 0xffffffff),
-		)
+			it.Then(t).Should(
+				it.Equal(guid.Time(b), guid.Time(a)),
+				it.Equal(guid.Seq(b), guid.Seq(a)),
+				it.Equal(guid.Node(b), 0xffffffff),
+			)
+		}
 	}
 }
 
@@ -254,13 +260,17 @@ func TestToL(t *testing.T) {
 			guid.WithClockUnix(),
 		)
 
-		a := guid.G(c, drift)
-		b := guid.ToL(a)
+		for _, a := range []guid.GID{
+			guid.G(c, drift),
+			guid.L(c, drift),
+		} {
+			b := guid.ToL(a)
 
-		it.Then(t).Should(
-			it.Equal(guid.Time(b), guid.Time(a)),
-			it.Equal(guid.Seq(b), guid.Seq(a)),
-		)
+			it.Then(t).Should(
+				it.Equal(guid.Time(b), guid.Time(a)),
+				it.Equal(guid.Seq(b), guid.Seq(a)),
+			)
+		}
 	}
 }
 
