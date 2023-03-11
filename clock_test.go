@@ -104,12 +104,34 @@ func TestWithClockInverse(t *testing.T) {
 }
 
 func TestWithMock(t *testing.T) {
-	c := guid.NewClockMock()
+	c := guid.NewClockMock(
+		guid.WithNodeID(0x0),
+	)
 	a := guid.G(c)
 
 	it.Then(t).Should(
 		it.Equal(guid.Node(a), 0),
 		it.Equal(guid.Time(a), 0),
 		it.Equal(guid.Seq(a), 0),
+	)
+}
+
+func TestWithUnique(t *testing.T) {
+	c := guid.NewClock(
+		guid.WithClockUnix(),
+		guid.WithUnique(func() uint64 { return 0 }),
+	)
+	a := guid.G(c)
+	time.Sleep(1 * time.Second)
+	b := guid.G(c)
+	time.Sleep(2 * time.Second)
+	d := guid.G(c)
+
+	it.Then(t).Should(
+		it.True(guid.Before(a, b)),
+		it.True(guid.Before(b, d)),
+		it.Equal(guid.Seq(a), 0),
+		it.Equal(guid.Seq(b), 0),
+		it.Equal(guid.Seq(d), 0),
 	)
 }
