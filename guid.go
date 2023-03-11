@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"unsafe"
 )
 
 // GID is native representation of k-ordered number.
@@ -242,10 +243,14 @@ func FromT(t time.Time, drift ...time.Duration) GID {
 // the value n defines number of bits to extract into each cell.
 func Split(n uint64, uid GID) (bytes []byte) {
 	if uid.Local {
-		return split(0, uint64(uid.Lo), 64, n)
+		b := make([]byte, 64/n)
+		split(0, uint64(uid.Lo), 64, n, b)
+		return b
 	}
 
-	return split(uid.Hi, uid.Lo, 96, n)
+	b := make([]byte, 96/n)
+	split(uid.Hi, uid.Lo, 96, n, b)
+	return b
 }
 
 // Fold composes UID value from byte slice. The operation is inverse to Split.
@@ -263,7 +268,22 @@ func FoldL(n uint64, bytes []byte) (uid GID) {
 
 // Bytes encodes k-odered value to byte slice
 func Bytes(uid GID) []byte {
-	return Split(8, uid)
+	if uid.Local {
+		var (
+			buf [8]byte
+			bfs = buf[:]
+		)
+		split(0, uint64(uid.Lo), 64, 8, bfs)
+		return bfs
+	}
+
+	var (
+		buf [12]byte
+		bfs = buf[:]
+	)
+
+	split(uid.Hi, uid.Lo, 96, 8, bfs)
+	return bfs
 }
 
 // FromBytes decodes converts k-order UID from bytes
@@ -280,11 +300,24 @@ func FromBytes(val []byte) (GID, error) {
 
 // String encodes k-ordered value to lexicographically sortable strings
 func String(uid GID) string {
-	if uid.Local {
-		return "l:" + encode64(Split(4, uid))
-	}
+	var (
+		buf [16]byte // interim buffer where uid is split as seq of bytes
+		enc [18]byte // output encoded string
+		bfs = buf[:]
+	)
 
-	return "g:" + encode64(Split(6, uid))
+	if uid.Local {
+		enc[0] = 'l'
+		split(0, uid.Lo, 64, 4, bfs)
+	} else {
+		enc[0] = 'g'
+		split(uid.Hi, uid.Lo, 96, 6, bfs)
+	}
+	enc[1] = ':'
+
+	encode64(buf, &enc)
+	str := enc[:]
+	return *(*string)(unsafe.Pointer(&str))
 }
 
 // FromString decodes converts k-order UID from lexicographically sortable strings

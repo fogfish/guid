@@ -18,19 +18,12 @@
 
 package guid
 
-var alphabet []rune = []rune{
-	'.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E',
-	'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U',
-	'V', 'W', 'X', 'Y', 'Z', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
-	'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-}
+var alphabet []byte = []byte(".0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz")
 
-func encode64(in []byte) string {
-	b := make([]rune, len(in))
-	for i, x := range in {
-		b[i] = alphabet[x]
+func encode64(in [16]byte, out *[18]byte) {
+	for i := 0; i < len(in); i++ {
+		out[i+2] = alphabet[in[i]]
 	}
-	return string(b)
 }
 
 func decode64(uid string) []byte {
