@@ -238,7 +238,7 @@ func TestFromL(t *testing.T) {
 			guid.WithClockUnix(),
 		)
 
-		for _, a := range []guid.GID{
+		for _, a := range []guid.K{
 			guid.L(c, drift),
 			guid.G(c, drift),
 		} {
@@ -260,7 +260,7 @@ func TestToL(t *testing.T) {
 			guid.WithClockUnix(),
 		)
 
-		for _, a := range []guid.GID{
+		for _, a := range []guid.K{
 			guid.G(c, drift),
 			guid.L(c, drift),
 		} {
@@ -411,8 +411,8 @@ func TestSplit(t *testing.T) {
 
 func TestJSONCodec(t *testing.T) {
 	type MyStruct struct {
-		G guid.GID `json:"g"`
-		L guid.GID `json:"l"`
+		G guid.K `json:"g"`
+		L guid.K `json:"l"`
 	}
 
 	c := guid.NewClock(
@@ -434,7 +434,7 @@ func TestJSONCodec(t *testing.T) {
 
 func TestJSONCodecFailed(t *testing.T) {
 	type MyStruct struct {
-		ID guid.GID `json:"id"`
+		ID guid.K `json:"id"`
 	}
 
 	for _, tt := range []string{
@@ -450,7 +450,7 @@ func TestJSONCodecFailed(t *testing.T) {
 }
 
 var (
-	k guid.GID
+	k guid.K
 	s string
 	d []byte
 	t uint64
