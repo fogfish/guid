@@ -25,20 +25,20 @@ import (
 	"unsafe"
 )
 
-// GID is native representation of k-ordered number.
+// K is native representation of k-ordered number.
 // The structure is dedicated for both local and global k-ordered values.
 // The local k-ordered value do not uses Hi fraction (equal to 0).
 // The global k-ordered value is 96-bit long and requires no central registration process.
 //
 // Note: Golang struct is 128-bits but only 96-bits are used effectively.
 // The serialization process ensures that only 96-bits are used.
-type GID struct {
+type K struct {
 	Hi, Lo uint64
 	Local  bool
 }
 
 // UnmarshalJSON decodes lexicographically sortable strings to UID value
-func (uid *GID) UnmarshalJSON(b []byte) (err error) {
+func (uid *K) UnmarshalJSON(b []byte) (err error) {
 	var val string
 	if err = json.Unmarshal(b, &val); err != nil {
 		return
@@ -59,7 +59,7 @@ func (uid *GID) UnmarshalJSON(b []byte) (err error) {
 }
 
 // MarshalJSON encodes k-ordered value to lexicographically sortable JSON strings
-func (uid GID) MarshalJSON() (bytes []byte, err error) {
+func (uid K) MarshalJSON() (bytes []byte, err error) {
 	if uid.Local {
 		return json.Marshal("*" + String(FromL(Clock, uid)))
 	}
@@ -68,7 +68,7 @@ func (uid GID) MarshalJSON() (bytes []byte, err error) {
 }
 
 // String encoding of K-Order value
-func (uid GID) String() string {
+func (uid K) String() string {
 	return String(uid)
 }
 
@@ -81,7 +81,7 @@ const (
 )
 
 // Z returns "zero" local (64-bit) k-order identifier
-func Z(clock Chronos, drift ...time.Duration) (uid GID) {
+func Z(clock Chronos, drift ...time.Duration) (uid K) {
 	t, seq := uint64(0), uint64(0)
 	return makeG(0, driftInBits(drift), t, seq)
 }
@@ -91,12 +91,12 @@ func Z(clock Chronos, drift ...time.Duration) (uid GID) {
 //	3bit  47 bit - 𝒅 bit         32 bit     𝒅 bit  14 bit
 //	|-|-------------------|----------------|-----|-------|
 //	⟨𝒅⟩        ⟨𝒕⟩                ⟨𝒍⟩         ⟨𝒕⟩     ⟨𝒔⟩
-func G(clock Chronos, drift ...time.Duration) GID {
+func G(clock Chronos, drift ...time.Duration) K {
 	t, seq := clock.T()
 	return makeG(clock.L(), driftInBits(drift), t, seq)
 }
 
-func makeG(n, drift, t, seq uint64) (uid GID) {
+func makeG(n, drift, t, seq uint64) (uid K) {
 	thi, tlo := splitT(t, drift)
 	nhi, nlo := splitNode(n, drift)
 
@@ -114,12 +114,12 @@ func makeG(n, drift, t, seq uint64) (uid GID) {
 // |-|------------------------|-------|
 // ⟨𝒅⟩           ⟨𝒕⟩              ⟨𝒔⟩
 
-func L(clock Chronos, drift ...time.Duration) GID {
+func L(clock Chronos, drift ...time.Duration) K {
 	t, seq := clock.T()
 	return makeL(driftInBits(drift), t, seq)
 }
 
-func makeL(drift, t, seq uint64) (uid GID) {
+func makeL(drift, t, seq uint64) (uid K) {
 	d := (drift - driftZ) << 61
 	x := t >> bitsSeqDrift << bitsSeq
 
@@ -131,22 +131,22 @@ func makeL(drift, t, seq uint64) (uid GID) {
 }
 
 // Equal compares k-order UIDs, returns true if values are equal
-func Equal(a, b GID) bool {
+func Equal(a, b K) bool {
 	return a.Hi == b.Hi && a.Lo == b.Lo
 }
 
 // Before checks if k-ordered value A is before value B
-func Before(a, b GID) bool {
+func Before(a, b K) bool {
 	return a.Hi <= b.Hi && a.Lo < b.Lo
 }
 
 // After checks if k-ordered value A is after value B
-func After(a, b GID) bool {
+func After(a, b K) bool {
 	return a.Hi >= b.Hi && a.Lo > b.Lo
 }
 
 // Time returns ⟨𝒕⟩ timestamp fraction from identifier in nano seconds
-func Time(uid GID) uint64 {
+func Time(uid K) uint64 {
 	if uid.Local {
 		return timeL(uid)
 
@@ -154,7 +154,7 @@ func Time(uid GID) uint64 {
 	return timeG(uid)
 }
 
-func timeG(uid GID) uint64 {
+func timeG(uid K) uint64 {
 	//
 	//   3    47 - drift             32bit      drift   14
 	//  |-|-------------------|--------!-------|-----|-------|
@@ -172,23 +172,23 @@ func timeG(uid GID) uint64 {
 	return t
 }
 
-func timeL(uid GID) uint64 {
+func timeL(uid K) uint64 {
 	return uint64(uid.Lo) << 3 >> bitsSeqDrift << bitsSeqDrift
 }
 
 // EpochT convers ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-func EpochT(uid GID) time.Time {
+func EpochT(uid K) time.Time {
 	return time.Unix(0, int64(Time(uid)))
 }
 
 // EpochI (inverse) convers ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-func EpochI(uid GID) time.Time {
+func EpochI(uid K) time.Time {
 	t := 0xffffffffffffffff - Time(uid)
 	return time.Unix(0, int64(t))
 }
 
 // Node returns ⟨𝒍⟩ location fraction from identifier.
-func Node(uid GID) uint64 {
+func Node(uid K) uint64 {
 	if uid.Local {
 		return 0
 	}
@@ -211,12 +211,12 @@ func Node(uid GID) uint64 {
 
 // Seq returns ⟨𝒔⟩ sequence value. The value of monotonic unique integer
 // at the time of K-ordered value creation.
-func Seq(uid GID) uint64 {
+func Seq(uid K) uint64 {
 	return uid.Lo & 0x3fff
 }
 
 // Diff approximates distance between k-order UIDs.
-func Diff(a, b GID) GID {
+func Diff(a, b K) K {
 	t := Time(a) - Time(b)
 	s := Seq(a) - Seq(b)
 
@@ -230,7 +230,7 @@ func Diff(a, b GID) GID {
 }
 
 // Casts local (64-bit) k-order UID to global (96-bit) one
-func FromL(clock Chronos, uid GID) GID {
+func FromL(clock Chronos, uid K) K {
 	if !uid.Local {
 		return uid
 	}
@@ -240,7 +240,7 @@ func FromL(clock Chronos, uid GID) GID {
 }
 
 // Casts global (96-bit) k-order value to local (64-bit) one
-func ToL(uid GID) GID {
+func ToL(uid K) K {
 	if uid.Local {
 		return uid
 	}
@@ -250,13 +250,13 @@ func ToL(uid GID) GID {
 }
 
 // FromT converts unix timestamp to local K-order value
-func FromT(t time.Time, drift ...time.Duration) GID {
+func FromT(t time.Time, drift ...time.Duration) K {
 	return makeL(driftInBits(drift), uint64(t.UnixNano()), 0)
 }
 
 // Split decomposes UID value to bytes slice. The function acts as binary comprehension,
 // the value n defines number of bits to extract into each cell.
-func Split(n uint64, uid GID) (bytes []byte) {
+func Split(n uint64, uid K) (bytes []byte) {
 	if uid.Local {
 		b := make([]byte, 64/n)
 		split(0, uint64(uid.Lo), 64, n, b)
@@ -269,20 +269,20 @@ func Split(n uint64, uid GID) (bytes []byte) {
 }
 
 // Fold composes UID value from byte slice. The operation is inverse to Split.
-func FoldG(n uint64, bytes []byte) (uid GID) {
+func FoldG(n uint64, bytes []byte) (uid K) {
 	uid.Hi, uid.Lo = fold(96, n, bytes)
 	return
 }
 
 // Fold composes UID value from byte slice. The operation is inverse to Split.
-func FoldL(n uint64, bytes []byte) (uid GID) {
+func FoldL(n uint64, bytes []byte) (uid K) {
 	uid.Hi, uid.Lo = fold(64, n, bytes)
 	uid.Local = true
 	return
 }
 
 // Bytes encodes k-odered value to byte slice
-func Bytes(uid GID) []byte {
+func Bytes(uid K) []byte {
 	if uid.Local {
 		var (
 			buf [8]byte
@@ -302,19 +302,19 @@ func Bytes(uid GID) []byte {
 }
 
 // FromBytes decodes converts k-order UID from bytes
-func FromBytes(val []byte) (GID, error) {
+func FromBytes(val []byte) (K, error) {
 	switch len(val) {
 	case bytesInG:
 		return FoldG(8, val), nil
 	case bytesInL:
 		return FoldL(8, val), nil
 	default:
-		return GID{}, fmt.Errorf("malformed k-order number: %v", val)
+		return K{}, fmt.Errorf("malformed k-order number: %v", val)
 	}
 }
 
 // String encodes k-ordered value to lexicographically sortable strings
-func String(uid GID) string {
+func String(uid K) string {
 	var (
 		buf [16]byte // interim buffer where uid is split as seq of bytes
 		enc [16]byte // output encoded string
@@ -333,18 +333,18 @@ func String(uid GID) string {
 }
 
 // FromStringG decodes converts k-order UID from lexicographically sortable strings
-func FromStringG(val string) (GID, error) {
+func FromStringG(val string) (K, error) {
 	if len(val) != 16 {
-		return GID{}, fmt.Errorf("malformed k-order number: %v", val)
+		return K{}, fmt.Errorf("malformed k-order number: %v", val)
 	}
 
 	return FoldG(6, decode64(val)), nil
 }
 
 // FromStringL decodes converts k-order UID from lexicographically sortable strings
-func FromStringL(val string) (GID, error) {
+func FromStringL(val string) (K, error) {
 	if len(val) != 16 {
-		return GID{}, fmt.Errorf("malformed k-order number: %v", val)
+		return K{}, fmt.Errorf("malformed k-order number: %v", val)
 	}
 
 	return FoldL(4, decode64(val)), nil
