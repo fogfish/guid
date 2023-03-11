@@ -397,10 +397,24 @@ func TestJSONCodec(t *testing.T) {
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
-	json.Unmarshal(b, &x)
+	err := json.Unmarshal(b, &x)
 
 	it.Then(t).Should(
+		it.Nil(err),
 		it.Equal(val.ID, x.ID),
+	)
+}
+
+func TestJSONCodecFailed(t *testing.T) {
+	type MyStruct struct {
+		ID guid.GID `json:"id"`
+	}
+
+	var x MyStruct
+	err := json.Unmarshal([]byte(`{"id":"abcd"}`), &x)
+
+	it.Then(t).ShouldNot(
+		it.Nil(err),
 	)
 }
 
