@@ -20,18 +20,15 @@ package guid
 
 import "time"
 
-// zero point for drift drift
+// zero point for drift
 const driftZ = 18
 
-/*
-
-driftBits converts a time drift into number of bits to shift the location
-fraction. E.g. if application allows 2 min time drift in the system than last
-20 bits of timestamp becomes less significant than location.
-
-The default drift is approximately 5 min, the drift value is encoded as
-3 bits, which gives 8 possible values
-*/
+// driftBits converts a time drift into number of bits to shift the location
+// fraction. E.g. if application allows 2 min time drift in the system than last
+// 20 bits of timestamp becomes less significant than location.
+//
+// The default drift is approximately 5 min, the drift value is encoded as
+// 3 bits, which gives 8 possible values
 func driftInBits(drift []time.Duration) uint64 {
 	switch {
 	case len(drift) == 0:
@@ -55,7 +52,6 @@ func driftInBits(drift []time.Duration) uint64 {
 	}
 }
 
-//
 // splits ⟨𝒕⟩ faction (timestamp) to hi and lo bits of K order value
 func splitT(t uint64, drift uint64) (uint64, uint64) {
 	//
@@ -78,7 +74,6 @@ func splitT(t uint64, drift uint64) (uint64, uint64) {
 	return hi | dd, lo
 }
 
-//
 // split ⟨𝒍⟩ faction (location) to hi and lo bits of K order value
 func splitNode(node, drift uint64) (uint64, uint64) {
 	//
@@ -96,8 +91,6 @@ func splitNode(node, drift uint64) (uint64, uint64) {
 	return hi, lo
 }
 
-//
-//
 func split(hi, lo, size, n uint64) (bytes []byte) {
 	hilo := uint64(64) // hi | lo division at
 	bytes = make([]byte, size/n)
@@ -126,8 +119,6 @@ func split(hi, lo, size, n uint64) (bytes []byte) {
 	return
 }
 
-//
-//
 func fold(size, n uint64, bytes []byte) (hi, lo uint64) {
 	hilo := uint64(64)
 

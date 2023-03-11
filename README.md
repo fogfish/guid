@@ -84,7 +84,13 @@ The library supports casting of 96-bit identifier to 64-bit by dropping ⟨𝒍�
 
 ## Getting started
 
-The latest version of the library is available at `main` branch. All development, including new features and bug fixes, take place on the `main` branch using forking and pull requests as described in contribution guidelines.  The stable version is available via Golang modules.
+The latest version of the library is available at `main` branch. All development, including new features and bug fixes, take place on the `main` branch using forking and pull requests as described in contribution guidelines. The stable version is available via Golang modules.
+
+Use `go get` to retrieve the library and add it as dependency to your application.
+
+```bash
+go get github.com/fogfish/guid
+```
 
 Here is minimal example (also available in [playground](https://play.golang.org/p/l2JA3PWTPwF)):
 
@@ -95,22 +101,30 @@ import (
   "fmt",
   "time",
 
-	"github.com/fogfish/guid"
+	"github.com/fogfish/guid/v2"
 )
 
+func useDefaultClock() {
+  a := guid.G(guid.Clock)
+  time.Sleep(1 * time.Second)
+  b := guid.G(guid.Clock)
+  fmt.Printf("%s < %s is %v\n", a, b, guid.Before(a, b))
+}
+
+func useCustomClock() {
+  clock := guid.NewLClock(
+    guid.WithNodeID(0xffffffff),
+  )
+
+  c := guid.G(clock)
+  time.Sleep(1 * time.Second)
+  d := guid.G(clock)
+  fmt.Printf("%s < %s is %v\n", c, d, guid.Before(c, d))
+}
+
 func main() {
-  // guid.Clock is default logical clock
-  a := guid.G.K(guid.Clock)
-  time.Sleep(1 * time.Second)
-  b := guid.G.K(guid.Clock)
-  fmt.Printf("%s < %s is %v\n", a.String(), b.String(), guid.G.Lt(a, b))
-	
-  // Use custom logical clock
-  clock := guid.NewLClock(guid.ConfNodeID(0xffffffff))
-  c := guid.G.K(clock)
-  time.Sleep(1 * time.Second)
-  d := guid.G.K(clock)
-  fmt.Printf("%s < %s is %v\n", c.String(), d.String(), guid.G.Lt(c, d))
+  useDefaultClock()
+	useCustomClock()
 }
 ```
 

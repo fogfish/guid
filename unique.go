@@ -20,17 +20,12 @@ package guid
 
 import "sync/atomic"
 
-/*
-
-Unique Monotonic Integer sequence
-Global at the node
-*/
+// Global Unique Monotonic Integer sequence
 var (
 	unique  int64 = 0
 	inverse int64 = 0x7fffffffffffffff
 )
 
-//
 func uniqueInt() uint64 {
 	return uint64(atomic.AddInt64(&unique, 1) & 0x3fff)
 }
