@@ -428,12 +428,48 @@ func TestJSONCodecFailed(t *testing.T) {
 	)
 }
 
-// // var last *guid.K
+var (
+	k guid.GID
+	s string
+	d []byte
+	t uint64
+)
 
-// // func BenchmarkL(b *testing.B) {
-// // 	var val guid.K
-// // 	for i := 0; i < b.N; i++ {
-// // 		val = guid.G(guid.Clock)
-// // 	}
-// // 	last = &val
-// // }
+func BenchmarkGUID(b *testing.B) {
+	b.Run("G", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			k = guid.G(guid.Clock)
+		}
+	})
+
+	b.Run("L", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			k = guid.L(guid.Clock)
+		}
+	})
+
+	b.Run("String", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			s = guid.String(guid.G(guid.Clock))
+		}
+	})
+
+	b.Run("Bytes", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			d = guid.Bytes(guid.G(guid.Clock))
+		}
+	})
+
+	b.Run("Time", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t = guid.Time(guid.G(guid.Clock))
+		}
+	})
+
+	b.Run("Node", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t = guid.Node(guid.G(guid.Clock))
+		}
+	})
+
+}

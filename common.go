@@ -18,7 +18,9 @@
 
 package guid
 
-import "time"
+import (
+	"time"
+)
 
 // zero point for drift
 const driftZ = 18
@@ -91,9 +93,10 @@ func splitNode(node, drift uint64) (uint64, uint64) {
 	return hi, lo
 }
 
-func split(hi, lo, size, n uint64) (bytes []byte) {
+func split(hi, lo, size, n uint64, bytes []byte) {
 	hilo := uint64(64) // hi | lo division at
-	bytes = make([]byte, size/n)
+	// bytes = alloc(size, n)
+	// make([]byte, size/n)
 
 	mask := uint64(1<<n) - 1
 	i := 0
@@ -102,11 +105,9 @@ func split(hi, lo, size, n uint64) (bytes []byte) {
 		b := a - n
 		switch {
 		case a >= hilo && b >= hilo:
-			value := byte(hi >> (b - hilo) & mask)
-			bytes[i] = value
+			bytes[i] = byte(hi >> (b - hilo) & mask)
 		case a <= hilo && b <= hilo:
-			value := byte(lo >> b & mask)
-			bytes[i] = value
+			bytes[i] = byte(lo >> b & mask)
 		case a > hilo && b < hilo:
 			suffix := uint64(1<<(a-hilo)) - 1
 			hi := byte(hi & suffix)
