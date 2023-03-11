@@ -411,14 +411,15 @@ func TestSplit(t *testing.T) {
 
 func TestJSONCodec(t *testing.T) {
 	type MyStruct struct {
-		ID guid.GID `json:"id"`
+		G guid.GID `json:"g"`
+		L guid.GID `json:"l"`
 	}
 
 	c := guid.NewClock(
 		guid.WithNodeID(0xffffffff),
 		guid.WithClockUnix(),
 	)
-	val := MyStruct{guid.G(c)}
+	val := MyStruct{G: guid.G(c), L: guid.L(c)}
 	b, _ := json.Marshal(val)
 
 	var x MyStruct
@@ -426,7 +427,8 @@ func TestJSONCodec(t *testing.T) {
 
 	it.Then(t).Should(
 		it.Nil(err),
-		it.Equal(val.ID, x.ID),
+		it.Equal(val.G, x.G),
+		it.Equal(val.L, x.L),
 	)
 }
 

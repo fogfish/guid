@@ -43,6 +43,17 @@ func (uid *GID) UnmarshalJSON(b []byte) (err error) {
 	if err = json.Unmarshal(b, &val); err != nil {
 		return
 	}
+
+	if val[0] == '*' {
+		*uid, err = FromStringG(val[1:])
+		if err != nil {
+			return err
+		}
+
+		*uid = ToL(*uid)
+		return nil
+	}
+
 	*uid, err = FromStringG(val)
 	return err
 }
@@ -50,7 +61,7 @@ func (uid *GID) UnmarshalJSON(b []byte) (err error) {
 // MarshalJSON encodes k-ordered value to lexicographically sortable JSON strings
 func (uid GID) MarshalJSON() (bytes []byte, err error) {
 	if uid.Local {
-		return json.Marshal(String(FromL(Clock, uid)))
+		return json.Marshal("*" + String(FromL(Clock, uid)))
 	}
 
 	return json.Marshal(String(uid))
