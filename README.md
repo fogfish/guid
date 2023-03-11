@@ -92,16 +92,16 @@ Use `go get` to retrieve the library and add it as dependency to your applicatio
 go get github.com/fogfish/guid
 ```
 
-Here is minimal example (also available in [playground](https://play.golang.org/p/l2JA3PWTPwF)):
+Here is minimal example (also available in [playground](https://go.dev/play/p/zaIM7BXGt8F)):
 
 ```go
 package main
 
 import (
-  "fmt",
-  "time",
+  "fmt"
+  "time"
 
-	"github.com/fogfish/guid/v2"
+  "github.com/fogfish/guid/v2"
 )
 
 func useDefaultClock() {
@@ -112,7 +112,7 @@ func useDefaultClock() {
 }
 
 func useCustomClock() {
-  clock := guid.NewLClock(
+  clock := guid.NewClock(
     guid.WithNodeID(0xffffffff),
   )
 
@@ -124,7 +124,7 @@ func useCustomClock() {
 
 func main() {
   useDefaultClock()
-	useCustomClock()
+  useCustomClock()
 }
 ```
 
