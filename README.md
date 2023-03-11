@@ -4,6 +4,10 @@
 decentralized manner for Golang applications</strong></p>
 
   <p align="center">
+    <!-- Version -->
+    <a href="https://github.com/fogfish/guid/releases">
+      <img src="https://img.shields.io/github/v/tag/fogfish/guid?label=version" />
+    </a>
     <!-- Documentation -->
     <a href="http://godoc.org/github.com/fogfish/guid">
       <img src="https://godoc.org/github.com/fogfish/guid?status.svg" />
@@ -89,7 +93,7 @@ The latest version of the library is available at `main` branch. All development
 Use `go get` to retrieve the library and add it as dependency to your application.
 
 ```bash
-go get github.com/fogfish/guid
+go get github.com/fogfish/guid/v2
 ```
 
 Here is minimal example (also available in [playground](https://go.dev/play/p/zaIM7BXGt8F)):
