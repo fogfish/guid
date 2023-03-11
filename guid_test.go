@@ -411,7 +411,7 @@ func TestJSONCodecFailed(t *testing.T) {
 	}
 
 	var x MyStruct
-	err := json.Unmarshal([]byte(`{"id":"abcd"}`), &x)
+	err := json.Unmarshal([]byte(`{"id":100}`), &x)
 
 	it.Then(t).ShouldNot(
 		it.Nil(err),
