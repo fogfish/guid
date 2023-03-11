@@ -437,12 +437,16 @@ func TestJSONCodecFailed(t *testing.T) {
 		ID guid.GID `json:"id"`
 	}
 
-	var x MyStruct
-	err := json.Unmarshal([]byte(`{"id":100}`), &x)
-
-	it.Then(t).ShouldNot(
-		it.Nil(err),
-	)
+	for _, tt := range []string{
+		`{"id":100}`,
+		`{"id":"*****"}`,
+	} {
+		var x MyStruct
+		err := json.Unmarshal([]byte(tt), &x)
+		it.Then(t).ShouldNot(
+			it.Nil(err),
+		)
+	}
 }
 
 var (
