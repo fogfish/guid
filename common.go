@@ -30,13 +30,14 @@ const driftZ = 18
 // 20 bits of timestamp becomes less significant than location.
 //
 // The default drift is approximately 5 min, the drift value is encoded as
-// 3 bits, which gives 8 possible values
+// 3 bits, which gives 7 possible values (zero drift not allowed)
 func driftInBits(drift []time.Duration) uint64 {
 	switch {
 	case len(drift) == 0:
 		return driftZ + 3
-	case drift[0] <= 34*time.Second:
-		return driftZ
+	// NOTE: allow only 1 - 7 values for drift
+	// case drift[0] <= 34*time.Second:
+	// return driftZ
 	case drift[0] <= 68*time.Second:
 		return driftZ + 1
 	case drift[0] <= 137*time.Second:

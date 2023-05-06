@@ -28,7 +28,7 @@ import (
 )
 
 var drifts []time.Duration = []time.Duration{
-	30 * time.Second,
+	// 30 * time.Second,
 	60 * time.Second,
 	130 * time.Second,
 	270 * time.Second,
@@ -152,7 +152,7 @@ func TestSpecL(t *testing.T) {
 }
 
 func TestDiffG(t *testing.T) {
-	for i, drift := range drifts[1:] {
+	for i, drift := range drifts {
 		c := guid.NewClock(
 			guid.WithNodeID(0xffffffff),
 			guid.WithClock(func() uint64 { return 1 << 17 }),
@@ -187,7 +187,7 @@ func TestDiffL(t *testing.T) {
 		it.Then(t).Should(
 			it.Equal(guid.Seq(d), 1),
 			it.Equal(guid.Time(d), 0),
-			it.Equiv(guid.Bytes(d), []byte{byte(i << 5), 0, 0, 0, 0, 0, 0, 1}),
+			it.Equiv(guid.Bytes(d), []byte{byte((i + 1) << 5), 0, 0, 0, 0, 0, 0, 1}),
 		)
 	}
 }
@@ -317,6 +317,12 @@ func TestCodecL(t *testing.T) {
 			it.Nil(err),
 			it.Equiv(d, a),
 		)
+
+		_, err = guid.FromStringL("xxxxxx")
+		it.Then(t).ShouldNot(it.Nil(err))
+
+		_, err = guid.FromBytes([]byte("xxxxxx"))
+		it.Then(t).ShouldNot(it.Nil(err))
 	}
 }
 
