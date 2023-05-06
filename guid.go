@@ -32,10 +32,7 @@ import (
 //
 // Note: Golang struct is 128-bits but only 96-bits are used effectively.
 // The serialization process ensures that only 96-bits are used.
-type K struct {
-	Hi, Lo uint64
-	Local  bool
-}
+type K struct{ Hi, Lo uint64 }
 
 // UnmarshalJSON decodes lexicographically sortable strings to UID value
 func (uid *K) UnmarshalJSON(b []byte) (err error) {
@@ -60,7 +57,7 @@ func (uid *K) UnmarshalJSON(b []byte) (err error) {
 
 // MarshalJSON encodes k-ordered value to lexicographically sortable JSON strings
 func (uid K) MarshalJSON() (bytes []byte, err error) {
-	if uid.Local {
+	if uid.Hi == 0 {
 		return json.Marshal("*" + String(FromL(Clock, uid)))
 	}
 
@@ -103,7 +100,6 @@ func makeG(n, drift, t, seq uint64) (uid K) {
 	// Note: with drift = 30 sec, nhi = 0
 	uid.Hi = thi | nhi
 	uid.Lo = nlo | tlo | seq
-	uid.Local = false
 
 	return
 }
@@ -125,7 +121,6 @@ func makeL(drift, t, seq uint64) (uid K) {
 
 	uid.Hi = 0
 	uid.Lo = d | x | seq
-	uid.Local = true
 
 	return
 }
@@ -147,7 +142,7 @@ func After(a, b K) bool {
 
 // Time returns ⟨𝒕⟩ timestamp fraction from identifier in nano seconds
 func Time(uid K) uint64 {
-	if uid.Local {
+	if uid.Hi == 0 {
 		return timeL(uid)
 
 	}
@@ -189,7 +184,7 @@ func EpochI(uid K) time.Time {
 
 // Node returns ⟨𝒍⟩ location fraction from identifier.
 func Node(uid K) uint64 {
-	if uid.Local {
+	if uid.Hi == 0 {
 		return 0
 	}
 
@@ -220,7 +215,7 @@ func Diff(a, b K) K {
 	t := Time(a) - Time(b)
 	s := Seq(a) - Seq(b)
 
-	if !a.Local && !b.Local {
+	if a.Hi != 0 && b.Hi != 0 {
 		d := (a.Hi >> 29) + driftZ
 		return makeG(Node(a), d, t, s)
 	}
@@ -231,7 +226,7 @@ func Diff(a, b K) K {
 
 // Casts local (64-bit) k-order UID to global (96-bit) one
 func FromL(clock Chronos, uid K) K {
-	if !uid.Local {
+	if uid.Hi != 0 {
 		return uid
 	}
 
@@ -241,7 +236,7 @@ func FromL(clock Chronos, uid K) K {
 
 // Casts global (96-bit) k-order value to local (64-bit) one
 func ToL(uid K) K {
-	if uid.Local {
+	if uid.Hi == 0 {
 		return uid
 	}
 
@@ -257,7 +252,7 @@ func FromT(t time.Time, drift ...time.Duration) K {
 // Split decomposes UID value to bytes slice. The function acts as binary comprehension,
 // the value n defines number of bits to extract into each cell.
 func Split(n uint64, uid K) (bytes []byte) {
-	if uid.Local {
+	if uid.Hi == 0 {
 		b := make([]byte, 64/n)
 		split(0, uint64(uid.Lo), 64, n, b)
 		return b
@@ -277,13 +272,12 @@ func FoldG(n uint64, bytes []byte) (uid K) {
 // Fold composes UID value from byte slice. The operation is inverse to Split.
 func FoldL(n uint64, bytes []byte) (uid K) {
 	uid.Hi, uid.Lo = fold(64, n, bytes)
-	uid.Local = true
 	return
 }
 
 // Bytes encodes k-odered value to byte slice
 func Bytes(uid K) []byte {
-	if uid.Local {
+	if uid.Hi == 0 {
 		var (
 			buf [8]byte
 			bfs = buf[:]
@@ -321,7 +315,7 @@ func String(uid K) string {
 		bfs = buf[:]
 	)
 
-	if uid.Local {
+	if uid.Hi == 0 {
 		split(0, uid.Lo, 64, 4, bfs)
 	} else {
 		split(uid.Hi, uid.Lo, 96, 6, bfs)
