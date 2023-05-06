@@ -317,6 +317,12 @@ func TestCodecL(t *testing.T) {
 			it.Nil(err),
 			it.Equiv(d, a),
 		)
+
+		_, err = guid.FromStringL("xxxxxx")
+		it.Then(t).ShouldNot(it.Nil(err))
+
+		_, err = guid.FromBytes([]byte("xxxxxx"))
+		it.Then(t).ShouldNot(it.Nil(err))
 	}
 }
 
