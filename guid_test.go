@@ -88,6 +88,21 @@ func TestL(t *testing.T) {
 	)
 }
 
+func TestAfter(t *testing.T) {
+	for a, b := range map[string]string{
+		"NiiTRfl2BaVI1B.0": "NiiTTfl2BaVBHo8R",
+		"NiiTRfl2BaVI1B.1": "NiiTTfl2BaV71R8Q",
+	} {
+		av, _ := guid.FromStringG(a)
+		bv, _ := guid.FromStringG(b)
+
+		it.Then(t).Should(
+			it.True(guid.After(bv, av)),
+			it.True(guid.Before(av, bv)),
+		)
+	}
+}
+
 func TestSpecG(t *testing.T) {
 	spec := map[uint64]int64{
 		1 << 16: 0,
