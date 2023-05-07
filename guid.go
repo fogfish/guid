@@ -132,12 +132,12 @@ func Equal(a, b K) bool {
 
 // Before checks if k-ordered value A is before value B
 func Before(a, b K) bool {
-	return a.Hi <= b.Hi && a.Lo < b.Lo
+	return a.Hi < b.Hi || a.Lo < b.Lo
 }
 
 // After checks if k-ordered value A is after value B
 func After(a, b K) bool {
-	return a.Hi >= b.Hi && a.Lo > b.Lo
+	return a.Hi > b.Hi || a.Lo > b.Lo
 }
 
 // Time returns ⟨𝒕⟩ timestamp fraction from identifier in nano seconds
