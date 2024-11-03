@@ -309,7 +309,18 @@ func TestCodecG(t *testing.T) {
 			it.Nil(err),
 			it.Equiv(d, a),
 		)
+
+		x, err := guid.FromBase62(guid.Base62(a))
+		it.Then(t).Should(
+			it.Nil(err),
+			it.Equiv(x, a),
+		)
 	}
+
+	t.Run("Base62.Error", func(t *testing.T) {
+		_, err := guid.FromBase62("......")
+		it.Then(t).ShouldNot(it.Nil(err))
+	})
 }
 
 func TestCodecL(t *testing.T) {
@@ -331,6 +342,12 @@ func TestCodecL(t *testing.T) {
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equiv(d, a),
+		)
+
+		x, err := guid.FromBase62(guid.Base62(a))
+		it.Then(t).Should(
+			it.Nil(err),
+			it.Equiv(x, a),
 		)
 
 		_, err = guid.FromStringL("xxxxxx")
@@ -407,6 +424,30 @@ func TestLexSorting(t *testing.T) {
 
 	e := guid.L(c).String()
 	f := guid.L(c).String()
+
+	it.Then(t).ShouldNot(
+		it.Equal(e, f),
+	).Should(
+		it.Less(e, f),
+	)
+}
+
+func TestLexSortingBase62(t *testing.T) {
+	c := guid.NewClock(
+		guid.WithNodeID(0xffffffff),
+		guid.WithClockUnix(),
+	)
+
+	a := guid.Base62(guid.G(c))
+	b := guid.Base62(guid.G(c))
+	it.Then(t).ShouldNot(
+		it.Equal(a, b),
+	).Should(
+		it.Less(a, b),
+	)
+
+	e := guid.Base62(guid.L(c))
+	f := guid.Base62(guid.L(c))
 
 	it.Then(t).ShouldNot(
 		it.Equal(e, f),
