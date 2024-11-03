@@ -309,6 +309,12 @@ func TestCodecG(t *testing.T) {
 			it.Nil(err),
 			it.Equiv(d, a),
 		)
+
+		x, err := guid.FromBase62(guid.Base62(a))
+		it.Then(t).Should(
+			it.Nil(err),
+			it.Equiv(x, a),
+		)
 	}
 }
 
@@ -331,6 +337,12 @@ func TestCodecL(t *testing.T) {
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equiv(d, a),
+		)
+
+		x, err := guid.FromBase62(guid.Base62(a))
+		it.Then(t).Should(
+			it.Nil(err),
+			it.Equiv(x, a),
 		)
 
 		_, err = guid.FromStringL("xxxxxx")

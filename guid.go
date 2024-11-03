@@ -307,6 +307,22 @@ func FromBytes(val []byte) (K, error) {
 	}
 }
 
+// Encodes k-ordered value to lexicographically sortable base62 strings
+func Base62(uid K) string {
+	str := encode62(Bytes(uid))
+	return *(*string)(unsafe.Pointer(&str))
+}
+
+// FromBase62 decodes converts k-order UID from base62 string
+func FromBase62(val string) (K, error) {
+	b, err := decode62([]byte(val))
+	if err != nil {
+		return K{}, err
+	}
+
+	return FromBytes(b)
+}
+
 // String encodes k-ordered value to lexicographically sortable strings
 func String(uid K) string {
 	var (
