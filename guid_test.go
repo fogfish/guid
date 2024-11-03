@@ -427,6 +427,30 @@ func TestLexSorting(t *testing.T) {
 	)
 }
 
+func TestLexSortingBase62(t *testing.T) {
+	c := guid.NewClock(
+		guid.WithNodeID(0xffffffff),
+		guid.WithClockUnix(),
+	)
+
+	a := guid.Base62(guid.G(c))
+	b := guid.Base62(guid.G(c))
+	it.Then(t).ShouldNot(
+		it.Equal(a, b),
+	).Should(
+		it.Less(a, b),
+	)
+
+	e := guid.Base62(guid.L(c))
+	f := guid.Base62(guid.L(c))
+
+	it.Then(t).ShouldNot(
+		it.Equal(e, f),
+	).Should(
+		it.Less(e, f),
+	)
+}
+
 func TestSplit(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithNodeID(0xffffffff),
