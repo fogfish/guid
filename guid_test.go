@@ -316,6 +316,11 @@ func TestCodecG(t *testing.T) {
 			it.Equiv(x, a),
 		)
 	}
+
+	t.Run("Base62.Error", func(t *testing.T) {
+		_, err := guid.FromBase62("......")
+		it.Then(t).ShouldNot(it.Nil(err))
+	})
 }
 
 func TestCodecL(t *testing.T) {
