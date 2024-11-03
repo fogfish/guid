@@ -29,10 +29,6 @@ var (
 )
 
 func encode62(src []byte) []byte {
-	if len(src) == 0 {
-		return nil
-	}
-
 	rs := 0
 	cs := int(math.Ceil(math.Log(256) / math.Log(62) * float64(len(src))))
 	dst := make([]byte, cs)
@@ -57,17 +53,10 @@ func encode62(src []byte) []byte {
 }
 
 func decode62(src []byte) ([]byte, error) {
-	if len(src) == 0 {
-		return nil, nil
-	}
-
 	rs := 0
 	cs := int(math.Ceil(math.Log(62) / math.Log(256) * float64(len(src))))
 	dst := make([]byte, cs)
 	for i := range src {
-		if src[i] == '\n' || src[i] == '\r' {
-			continue
-		}
 		c := 0
 		v := int(decoder[src[i]])
 		if v == 255 {
