@@ -106,10 +106,24 @@ to 36 minutes.
 ↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to
 avoid collisions when multiple events happens during single millisecond or when
 the clock set backwards. The 14-bit value allows to have about 16K allocations
-per millisecond and over 10M per second on single node. Each instance of
+per tick of ⟨𝒕⟩ and over 100M per second on single node. Each instance of
 application process runs a unique sequence of integers. The implementation
 ensures that the same integer is not returned more than once on the current
 process. Restart of the process resets the sequence.
+
+⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as a single atomic step, so that the pair
+strictly increases with every allocation. ⟨𝒔⟩ counts within one tick of ⟨𝒕⟩ and
+restarts when the clock ticks; an allocator that exhausts a tick carries into
+the next one rather than folding ⟨𝒔⟩ back to zero. Two consequences are worth
+knowing:
+
+↣ Values allocated by one process are ordered exactly as they were allocated,
+whatever the allocation rate and even if the clock is stepped backwards, in
+which case ⟨𝒕⟩ holds its high water mark until real time catches up.
+
+↣ An allocator sustaining more than 2¹⁴ allocations per tick of ⟨𝒕⟩, that is
+more than 1.25·10⁸ per second, borrows ⟨𝒕⟩ from the future at the rate of 8
+nanoseconds per allocation over budget, until the burst ends.
 
 The library supports casting of 96-bit identifier to 64-bit by dropping
 ⟨𝒍⟩ fraction. This optimization reduces a storage footprint if application

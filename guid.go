@@ -73,6 +73,7 @@ const (
 	bitsDrift    = 3
 	bitsSeq      = 14
 	bitsSeqDrift = bitsSeq + bitsDrift
+	maskSeq      = 1<<bitsSeq - 1
 	bytesInG     = 12
 	bytesInL     = 8
 )
@@ -207,7 +208,7 @@ func Node(uid K) uint64 {
 // Seq returns ⟨𝒔⟩ sequence value. The value of monotonic unique integer
 // at the time of K-ordered value creation.
 func Seq(uid K) uint64 {
-	return uid.Lo & 0x3fff
+	return uid.Lo & maskSeq
 }
 
 // Diff approximates distance between k-order UIDs.

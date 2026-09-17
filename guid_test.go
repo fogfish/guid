@@ -53,6 +53,15 @@ func TestZ(t *testing.T) {
 	)
 }
 
+// consecutive ⟨𝒕,𝒔⟩ allocation: ⟨𝒔⟩ increments within a tick of ⟨𝒕⟩ and
+// restarts when the clock ticks, so that the pair strictly increases.
+func succeeds(a, b guid.K) bool {
+	if guid.Time(a) == guid.Time(b) {
+		return guid.Seq(b) == guid.Seq(a)+1
+	}
+	return guid.Time(b) > guid.Time(a)
+}
+
 func TestG(t *testing.T) {
 	c := guid.NewClock()
 	a := guid.G(c)
@@ -66,7 +75,7 @@ func TestG(t *testing.T) {
 		it.True(guid.Before(a, b)),
 		it.True(guid.After(b, a)),
 		it.Equal(guid.Node(a), guid.Node(b)),
-		it.Equal(guid.Seq(b)-guid.Seq(a), 1),
+		it.True(succeeds(a, b)),
 	)
 }
 
@@ -84,7 +93,7 @@ func TestL(t *testing.T) {
 		it.True(guid.After(b, a)),
 		it.Equal(guid.Node(a), guid.Node(b)),
 		it.Equal(guid.Node(a), 0),
-		it.Equal(guid.Seq(b)-guid.Seq(a), 1),
+		it.True(succeeds(a, b)),
 	)
 }
 

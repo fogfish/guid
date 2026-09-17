@@ -75,8 +75,12 @@ A fixed size of 96-bit is used to implement identity schema
 
 ↣ ⟨𝒅⟩ is 3 drift bits defines allowed clock drift. It shows the value of less important faction of time. The value supports step-wise drift from 30 seconds to 36 minutes.
 
-↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happens during single millisecond or when the clock set backwards. The 14-bit value allows to have about 16K allocations per millisecond and over 10M per second on single node. Each instance of application process runs a unique sequence of integers. The implementation ensures that the same integer is not returned more than once on the current
+↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happens during single millisecond or when the clock set backwards. The 14-bit value allows to have about 16K allocations per tick of ⟨𝒕⟩ and over 100M per second on single node. Each instance of application process runs a unique sequence of integers. The implementation ensures that the same integer is not returned more than once on the current
 process. Restart of the process resets the sequence.
+
+⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as a single atomic step, so that the pair ⟨𝒕,𝒔⟩ strictly increases with every allocation. ⟨𝒔⟩ counts within one tick of ⟨𝒕⟩ and restarts when the clock ticks; an allocator that exhausts a tick carries into the next one rather than folding ⟨𝒔⟩ back to zero. This makes values allocated by a single process ordered exactly as they were allocated — at any allocation rate, and even across a clock that is stepped backwards, where ⟨𝒕⟩ holds its high water mark until real time catches up. An allocator sustaining more than 2¹⁴ allocations per tick, that is more than 1.25·10⁸ per second, borrows ⟨𝒕⟩ from the future at 8 nanoseconds per allocation over budget until the burst ends.
+
+The ordering guarantees are stated and proven in [prove.md](prove.md); statement (2) below is machine-checked in [prove.lean](prove.lean).
 
 The library supports casting of 96-bit identifier to 64-bit by dropping ⟨𝒍⟩ fraction. This optimization reduces a storage footprint if application uses persistent allocators.
 

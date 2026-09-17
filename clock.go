@@ -44,11 +44,27 @@ type clock struct {
 	location uint64
 	// Monotonically increasing logical clock ⟨𝒕⟩ generator
 	ticker func() uint64
+	// Allocator of the coupled ⟨𝒕,𝒔⟩ pair, see sequence
+	advance func(uint64) uint64
+	// Decoupled ⟨𝒔⟩ generator, engaged only by WithUnique
 	unique func() uint64
 }
 
-func (clock clock) L() uint64           { return clock.location }
-func (clock clock) T() (uint64, uint64) { return clock.ticker(), clock.unique() }
+func (clock clock) L() uint64 { return clock.location }
+
+// T allocates the ⟨𝒕,𝒔⟩ fraction of a k-ordered value.
+//
+// ⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as one atomic step, so that the pair
+// strictly increases with every call and values are ordered exactly as they
+// are allocated. See sequence for why the two cannot be drawn independently.
+func (clock clock) T() (uint64, uint64) {
+	if clock.unique != nil {
+		return clock.ticker(), clock.unique()
+	}
+
+	v := clock.advance(clock.ticker())
+	return v >> bitsSeq << bitsSeqDrift, v & maskSeq
+}
 
 // Creates instance of logical clock
 func NewClock(opts ...Config) Chronos {
@@ -116,11 +132,34 @@ func WithNodeRandom() Config {
 	}
 }
 
-// WithClock configures a custom timestamp generator function
+// WithClock configures a custom timestamp generator function.
+//
+// The generator must be non-decreasing: it defines an ascending time domain,
+// the direction in which allocated values sort. Use WithClockDescending for a
+// generator that runs backwards.
+//
+// Each clock built with WithClock owns a private ⟨𝒕,𝒔⟩ sequence, since the
+// library cannot know whether a custom generator shares a time domain with any
+// other clock. Values allocated from two such clocks are therefore unique only
+// if the clocks also carry distinct ⟨𝒍⟩ node identity.
 func WithClock(ticker func() uint64) Config {
 	return func(clock *clock) {
+		seq := &sequence{}
 		clock.ticker = ticker
-		clock.unique = uniqueInt
+		clock.advance = seq.next
+		clock.unique = nil
+	}
+}
+
+// WithClockDescending configures a custom timestamp generator that runs
+// backwards, so that recently allocated values sort before older ones. It is
+// the custom generator counterpart of WithClockInverse.
+func WithClockDescending(ticker func() uint64) Config {
+	return func(clock *clock) {
+		seq := descending()
+		clock.ticker = ticker
+		clock.advance = seq.prev
+		clock.unique = nil
 	}
 }
 
@@ -128,7 +167,8 @@ func WithClock(ticker func() uint64) Config {
 func WithClockUnix() Config {
 	return func(clock *clock) {
 		clock.ticker = unixtime
-		clock.unique = uniqueInt
+		clock.advance = seqAscending.next
+		clock.unique = nil
 	}
 }
 
@@ -136,11 +176,13 @@ func unixtime() uint64 {
 	return uint64(time.Now().UnixNano())
 }
 
-// WithClockInverse configures inverse unix timestamp as generator function
+// WithClockInverse configures inverse unix timestamp as generator function,
+// so that recently allocated values sort before older ones.
 func WithClockInverse() Config {
 	return func(clock *clock) {
 		clock.ticker = inversetime
-		clock.unique = inverseInt
+		clock.advance = seqDescending.prev
+		clock.unique = nil
 	}
 }
 
@@ -148,7 +190,17 @@ func inversetime() uint64 {
 	return 0xffffffffffffffff - uint64(time.Now().UnixNano())
 }
 
-// WithUnique configures generator for ⟨𝒔⟩ monotonic strictly locally ordered integer
+// WithUnique configures a generator for ⟨𝒔⟩ that is independent of ⟨𝒕⟩.
+//
+// Deprecated: the library allocates ⟨𝒕⟩ and ⟨𝒔⟩ as one atomic pair, which is
+// what makes values sort in allocation order. Supplying ⟨𝒔⟩ separately opts out
+// of that coupling: unless the generator is itself monotone and never folds
+// back while ⟨𝒕⟩ stands still, values allocated within the same 2¹⁷ nanosecond
+// tick can sort in the opposite order to their allocation. It remains available
+// for tests and for applications that need a fixed ⟨𝒔⟩.
+//
+// The option must be applied after WithClock, WithClockUnix, WithClockInverse
+// or WithClockDescending, each of which re-engages the coupled allocation.
 func WithUnique(unique func() uint64) Config {
 	return func(clock *clock) {
 		clock.unique = unique
