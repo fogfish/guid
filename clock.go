@@ -45,21 +45,26 @@ const (
 // Chronos is an abstraction of logical clock used by library.
 type Chronos interface {
 	// Spatially unique identifier ⟨𝒍⟩ of ID allocator so called node location
+	//
+	// The identity is carried at the 58 bits X gives it, the widest of the
+	// types. G truncates it to its own 32 bits when it stamps a value, so a
+	// clock serves both without being configured twice.
 	Node() uint64
 	// Allocates the coupled ⟨𝒕,𝒔⟩ fraction of a k-ordered value
 	T() (uint64, uint64)
-	// ⟨𝒅⟩ drift, the number of ⟨𝒕⟩ bits that rank below ⟨𝒍⟩.
+	// ⟨𝒅⟩ drift, the rung of the ladder the clock allocates with.
 	//
 	// The drift decides how much clock disagreement the k-ordering tolerates
 	// and it must be the same for every value of a keyspace. It is a property
 	// of the clock so that a process cannot vary it per allocation.
-	Drift() uint64
+	Drift() Drift
 	// ⟨𝒐⟩ direction of the time domain.
 	//
 	// Like the drift it must be the same for every value of a keyspace, and it
 	// is a property of the clock so that a process cannot vary it per
 	// allocation. It is needed to place a wall clock instant into the domain,
-	// see FromTL and FromTG; reading ⟨𝒕⟩ back does not need it, see Epoch.
+	// see L.FromTime and G.FromTime; reading ⟨𝒕⟩ back does not need it, see
+	// Epoch.
 	Order() TimeOrder
 }
 
@@ -77,15 +82,15 @@ type clock struct {
 	ticker func() uint64
 	// Allocator of the coupled ⟨𝒕,𝒔⟩ pair, see sequence
 	advance func(uint64) uint64
-	// ⟨𝒅⟩ drift in bits, see driftInBits
-	drift uint64
+	// ⟨𝒅⟩ drift, the rung of the ladder, see Drift
+	drift Drift
 	// ⟨𝒐⟩ direction of the time domain, fixed by the WithClock* option
 	order TimeOrder
 }
 
 func (clock clock) Node() uint64 { return clock.location }
 
-func (clock clock) Drift() uint64 { return clock.drift }
+func (clock clock) Drift() Drift { return clock.drift }
 
 func (clock clock) Order() TimeOrder { return clock.order }
 
@@ -119,7 +124,7 @@ func NewClockMock(opts ...Config) Chronos {
 		location: 0,
 		ticker:   func() uint64 { return 0 },
 		advance:  func(uint64) uint64 { return 0 },
-		drift:    driftInBits(driftDefault),
+		drift:    driftDefault,
 		order:    ForwardTime,
 	}
 
@@ -136,38 +141,60 @@ type Config func(*clock)
 
 // WithDrift configures ⟨𝒅⟩, the clock disagreement the k-ordering tolerates.
 //
-// The value is rounded up to the next supported rung; the ladder runs from
-// 34.36 s to 4398 s in factor-of-two steps and defaults to 274.9 s. A larger
-// drift tolerates more skew, a smaller one yields a tighter k. See driftInBits.
+// The ladder has eight rungs, from Drift1ms to Drift4398s, and defaults to
+// Drift275s. A larger drift tolerates more skew, a smaller one yields a
+// tighter k. Use DriftOf to select the rung that covers a tolerance expressed
+// as a duration:
+//
+//	guid.NewClock(guid.WithDrift(guid.Drift16ms))
+//	guid.NewClock(guid.WithDrift(guid.DriftOf(5 * time.Second)))
 //
 // Every clock of a keyspace must be configured with the same drift, otherwise
 // values are ordered by their drift rather than by their time.
-func WithDrift(drift time.Duration) Config {
+func WithDrift(drift Drift) Config {
 	return func(clock *clock) {
-		clock.drift = driftInBits(drift)
+		clock.drift = drift & maskDrift
 	}
 }
 
-// WithNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier
+// WithNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier.
+//
+// The identifier is truncated to 58 bits, the width X gives it. A value of G
+// keeps only its low 32 bits, so an identity meant for both types has to fit
+// the narrower one.
 func WithNodeID(id uint64) Config {
 	return func(clock *clock) {
-		clock.location = id & 0x00000000ffffffff
+		clock.location = id & maskNodeX
 	}
 }
 
 // WithNodeFromEnv configures ⟨𝒍⟩ spatially unique identifier using env variable.
 //
 // CONFIG_GUID_NODE_ID - defines location id as a string
+//
+// The identity is the leading bytes of the SHA-256 of the variable, taken to
+// the 58 bits X gives ⟨𝒍⟩. The four bytes a G reads are kept at the bottom of
+// the identity rather than at its top, so that the G a given variable names
+// does not depend on how wide the clock's node field happens to be.
 func WithNodeFromEnv() Config {
 	return func(clock *clock) {
 		h := sha256.New()
 		h.Write([]byte(os.Getenv("CONFIG_GUID_NODE_ID")))
 		hash := h.Sum(nil)
-		clock.location = uint64(hash[0])<<24 | uint64(hash[1])<<16 | uint64(hash[2])<<8 | uint64(hash[3])
+
+		node := uint64(hash[0])<<24 | uint64(hash[1])<<16 | uint64(hash[2])<<8 | uint64(hash[3])
+		node |= uint64(hash[4])<<48 | uint64(hash[5])<<40 | uint64(hash[6])<<32
+
+		clock.location = node & maskNodeX
 	}
 }
 
-// WithNodeRandom configures ⟨𝒍⟩ spatially unique identifier using cryptographic random generator
+// WithNodeRandom configures ⟨𝒍⟩ spatially unique identifier using cryptographic random generator.
+//
+// The identity is 58 random bits, which is what makes the allocator
+// coordinator-free: the birthday bound is ≈ 5.4·10⁸ allocators for X. A G
+// keeps only 32 of those bits and its bound is ≈ 6.5·10⁴ — the number to plan
+// against if the keyspace is G rather than X.
 func WithNodeRandom() Config {
 	return func(clock *clock) {
 		rander := rand.Reader
@@ -180,7 +207,7 @@ func WithNodeRandom() Config {
 		for i, b := range bytes {
 			node = node | uint64(b)<<(64-8*(i+1))
 		}
-		clock.location = node & 0x00000000ffffffff
+		clock.location = node & maskNodeX
 	}
 }
 

@@ -19,9 +19,15 @@
         A[i - k] ≤ A[i] ≤ A[i + k]     for all i with k < i.
 
   The proof rests on one structural fact about the bit layout produced by
-  `makeG` (guid.go) — the epoch field ⟨E⟩ = ⌊t / 2^(17+D)⌋ outranks the node
+  `makeG` (global.go) — the epoch field ⟨E⟩ = ⌊t / 2^(17+D)⌋ outranks the node
   field ⟨l⟩ — and on one arithmetic fact about clocks — two readings more than
   Δ apart fall into different epochs.
+
+  Nothing below constrains `D` beyond `D ≤ 47`, the width of the truncated
+  clock: the layout is positional, so every drift the ladder of §1.1 offers --
+  `D ∈ {3,7,11,14,17,21,23,25}`, from Δ ≈ 1.05 ms to Δ ≈ 4398 s -- is covered
+  by the same theorems.  `ladder` below is that table, and `pack_lt_96` is the
+  machine-checked statement that each of its rungs fits the 96 bits of `G`.
 
   Only Lean 4 core is used; there are no dependencies.  Check with:
 
@@ -79,37 +85,115 @@ theorem div_lt_div_of_add_le {a b d : Nat} (hd : 0 < d) (h : a + d ≤ b) :
 -/
 
 /-- The value of a global identifier as a natural number, read off its fields:
-    drift code `d`, epoch `E`, node `l`, low clock bits `x`, sequence `s`. -/
-def pack (D d E l x s : Nat) : Nat :=
-  (((d * 2 ^ (47 - D) + E) * 2 ^ 32 + l) * 2 ^ D + x) * 2 ^ 14 + s
+    drift code `d`, epoch `E`, node `l`, low clock bits `x`, sequence `s`.
+
+    `N` is the width of the node field, the one width the library varies
+    between its types: 32 bits for `guid.G`, 58 for `guid.X`.  Nothing below
+    fixes it, so every theorem of this development holds for both. -/
+def pack (N D d E l x s : Nat) : Nat :=
+  (((d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x) * 2 ^ 14 + s
+
+/-- The drift ladder (`prove.md`, §1.1): the 3-bit code ⟨d⟩ stored in the value
+    selects `D`, the number of clock bits that rank below the node.  The rungs
+    are chosen rather than contiguous — the code is 3 bits while the layout
+    admits every `D ∈ {0,…,25}`. -/
+def ladder : Nat → Nat
+  | 0 => 3
+  | 1 => 7
+  | 2 => 11
+  | 3 => 14
+  | 4 => 17
+  | 5 => 21
+  | 6 => 23
+  | _ => 25
+
+/-- Every rung leaves at least 22 bits of epoch, i.e. `D ≤ 25 ≤ 47`. -/
+theorem ladder_le (d : Nat) : ladder d ≤ 25 := by
+  match d with
+  | 0 | 1 | 2 | 3 | 4 | 5 | 6 => decide
+  | (_ + 7) => exact Nat.le_refl 25
+
+/-- The ladder ascends: a larger code is a larger drift, so ⟨d⟩ orders values
+    by the window they were allocated with.  (Assumption (A1) forbids mixing
+    them in one keyspace; this says what the mixture would look like.) -/
+theorem ladder_mono : ∀ d, d < 7 → ladder d < ladder (d + 1) := by decide
+
+/-- A field of `m` bits above a field of `n` bits occupies `m + n` bits. -/
+theorem pack_digit {a b m n : Nat} (ha : a < 2 ^ m) (hb : b < 2 ^ n) :
+    a * 2 ^ n + b < 2 ^ (m + n) := by
+  have h : a * 2 ^ n + b < 2 ^ m * 2 ^ n := digit_lt ha hb
+  rw [Nat.pow_add]
+  exact h
+
+/-- **The layout fits, at every rung.**  With the widths of `prove.md`,
+    Proposition 1 — ⟨d⟩ 3, ⟨E⟩ 47−D, ⟨l⟩ 32, ⟨xlo⟩ D, ⟨s⟩ 14 — the packed value
+    is a 96-bit number for every `D ≤ 47`, because the widths sum to
+    `3 + (47−D) + 32 + D + 14 = 96` whichever side of the machine word boundary
+    a field happens to land on.  This is the claim that lifting the old `D ≥ 18`
+    floor rests on: the floor was a property of the shift arithmetic that used
+    to place the fields, not of the schema. -/
+theorem pack_lt {N D d E l x s : Nat} (hD : D ≤ 47)
+    (hd : d < 2 ^ 3) (hE : E < 2 ^ (47 - D)) (hl : l < 2 ^ N)
+    (hx : x < 2 ^ D) (hs : s < 2 ^ 14) :
+    pack N D d E l x s < 2 ^ (64 + N) := by
+  have h1 : d * 2 ^ (47 - D) + E < 2 ^ (3 + (47 - D)) := pack_digit hd hE
+  have h2 : (d * 2 ^ (47 - D) + E) * 2 ^ N + l < 2 ^ (3 + (47 - D) + N) :=
+    pack_digit h1 hl
+  have h3 : ((d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x
+          < 2 ^ (3 + (47 - D) + N + D) := pack_digit h2 hx
+  have he : 3 + (47 - D) + N + D = 50 + N := by omega
+  rw [he] at h3
+  have h4 : (((d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x) * 2 ^ 14 + s
+          < 2 ^ (50 + N + 14) := pack_digit h3 hs
+  have hf : 50 + N + 14 = 64 + N := by omega
+  rw [hf] at h4
+  exact h4
+
+/-- `guid.G`: a 32-bit node makes the value 96 bits. -/
+theorem pack_lt_96 {D d E l x s : Nat} (hD : D ≤ 47)
+    (hd : d < 2 ^ 3) (hE : E < 2 ^ (47 - D)) (hl : l < 2 ^ 32)
+    (hx : x < 2 ^ D) (hs : s < 2 ^ 14) :
+    pack 32 D d E l x s < 2 ^ 96 :=
+  pack_lt hD hd hE hl hx hs
+
+/-- `guid.X`: a 58-bit node makes the payload 122 bits — the 128 of a UUID less
+    the 6 that RFC 9562 reserves for the version and the variant.  Those two
+    fields are constants of the format and are spliced in at fixed positions
+    afterwards, which is a permutation of bit positions and therefore changes
+    neither this bound nor any order below (`proof.md`, §1.2′). -/
+theorem pack_lt_122 {D d E l x s : Nat} (hD : D ≤ 47)
+    (hd : d < 2 ^ 3) (hE : E < 2 ^ (47 - D)) (hl : l < 2 ^ 58)
+    (hx : x < 2 ^ D) (hs : s < 2 ^ 14) :
+    pack 58 D d E l x s < 2 ^ 122 :=
+  pack_lt hD hd hE hl hx hs
 
 /-- **Epoch dominance** (`prove.md`, Lemma 5).  A smaller epoch makes a smaller
     identifier, whatever the node, the low clock bits and the sequence are.
     This is the whole reason clock disagreement cannot reorder across epochs. -/
-theorem pack_lt_of_epoch_lt {D d E l x s E' l' x' s' : Nat}
-    (hl : l < 2 ^ 32) (hx : x < 2 ^ D) (hs : s < 2 ^ 14) (hE : E < E') :
-    pack D d E l x s < pack D d E' l' x' s' := by
+theorem pack_lt_of_epoch_lt {N D d E l x s E' l' x' s' : Nat}
+    (hl : l < 2 ^ N) (hx : x < 2 ^ D) (hs : s < 2 ^ 14) (hE : E < E') :
+    pack N D d E l x s < pack N D d E' l' x' s' := by
   have h0 : d * 2 ^ (47 - D) + E < d * 2 ^ (47 - D) + E' := by omega
-  have h1 : (d * 2 ^ (47 - D) + E) * 2 ^ 32 + l
-          < (d * 2 ^ (47 - D) + E') * 2 ^ 32 + l' :=
+  have h1 : (d * 2 ^ (47 - D) + E) * 2 ^ N + l
+          < (d * 2 ^ (47 - D) + E') * 2 ^ N + l' :=
     Nat.lt_of_lt_of_le (digit_lt h0 hl) (Nat.le_add_right _ _)
-  have h2 : ((d * 2 ^ (47 - D) + E) * 2 ^ 32 + l) * 2 ^ D + x
-          < ((d * 2 ^ (47 - D) + E') * 2 ^ 32 + l') * 2 ^ D + x' :=
+  have h2 : ((d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x
+          < ((d * 2 ^ (47 - D) + E') * 2 ^ N + l') * 2 ^ D + x' :=
     Nat.lt_of_lt_of_le (digit_lt h1 hx) (Nat.le_add_right _ _)
   exact Nat.lt_of_lt_of_le (digit_lt h2 hs) (Nat.le_add_right _ _)
 
 /-- Equal prefix: identifiers of the same node in the same epoch are ordered by
     `(xlo, s)` alone.  This is the step behind Corollary 2 of `prove.md` — the
     per-node stream is exactly sorted. -/
-theorem pack_le_of_suffix_le {D d E l x s x' s' : Nat}
+theorem pack_le_of_suffix_le {N D d E l x s x' s' : Nat}
     (h : x * 2 ^ 14 + s ≤ x' * 2 ^ 14 + s') :
-    pack D d E l x s ≤ pack D d E l x' s' := by
+    pack N D d E l x s ≤ pack N D d E l x' s' := by
   have key : ∀ P a b : Nat,
       (P * 2 ^ D + a) * 2 ^ 14 + b = P * 2 ^ D * 2 ^ 14 + (a * 2 ^ 14 + b) := by
     intro P a b
     rw [Nat.add_mul, Nat.add_assoc]
-  show ((( d * 2 ^ (47 - D) + E) * 2 ^ 32 + l) * 2 ^ D + x) * 2 ^ 14 + s
-     ≤ (((d * 2 ^ (47 - D) + E) * 2 ^ 32 + l) * 2 ^ D + x') * 2 ^ 14 + s'
+  show ((( d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x) * 2 ^ 14 + s
+     ≤ (((d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x') * 2 ^ 14 + s'
   rw [key, key]
   exact Nat.add_le_add_left h _
 
@@ -124,9 +208,14 @@ theorem therefore holds for every execution, not for a particular schedule.
 -/
 
 structure Trace where
-  /-- drift parameter `D ∈ {18,…,25}`, the value of `driftInBits`. -/
+  /-- the 3-bit drift code ⟨d⟩ the values carry, a rung of `ladder`. -/
+  d : Nat
+  hd : d < 2 ^ 3
+  /-- drift parameter `D`, the number of clock bits ranking below the node.
+      It is read off the ladder rather than assumed: `D = ladder d`, hence
+      `D ∈ {3,7,11,14,17,21,23,25}` and in particular `D ≤ 25`. -/
   D : Nat
-  hD : 18 ≤ D
+  hD : D = ladder d
   /-- the drift window `Δ = 2^(17+D)` nanoseconds. -/
   delta : Nat
   hdelta : delta = 2 ^ (17 + D)
@@ -138,11 +227,13 @@ structure Trace where
   tau : Nat → Nat
   /-- local clock reading used by the `i`-th allocation. -/
   clk : Nat → Nat
-  /-- 32-bit allocator identity of the `i`-th allocation. -/
+  /-- width of the node field: 32 for `guid.G`, 58 for `guid.X`. -/
+  N : Nat
+  /-- allocator identity of the `i`-th allocation, `N` bits wide. -/
   node : Nat → Nat
   /-- 14-bit sequence of the `i`-th allocation. -/
   seq : Nat → Nat
-  hnode : ∀ i, node i < 2 ^ 32
+  hnode : ∀ i, node i < 2 ^ N
   hseq : ∀ i, seq i < 2 ^ 14
   /-- allocations are indexed in real-time order. -/
   mono_tau : ∀ i j, i ≤ j → tau i ≤ tau j
@@ -164,7 +255,8 @@ def tlo (T : Trace) (i : Nat) : Nat := T.clk i / 2 ^ 17 % 2 ^ T.D
 
 /-- `A i` — the identifier produced by the `i`-th allocation, as a number. -/
 def A (T : Trace) (i : Nat) : Nat :=
-  pack T.D (T.D - 18) (T.epoch i) (T.node i) (T.tlo i) (T.seq i)
+  pack T.N T.D T.d (T.epoch i) (T.node i) (T.tlo i) (T.seq i)
+
 
 theorem tlo_lt (T : Trace) (i : Nat) : T.tlo i < 2 ^ T.D :=
   Nat.mod_lt (T.clk i / 2 ^ 17) (two_pow_pos T.D)
@@ -173,11 +265,40 @@ theorem delta_pos (T : Trace) : 0 < T.delta := by
   rw [T.hdelta]
   exact two_pow_pos _
 
+/-- `D` is on the ladder, so it never exceeds the 47 bits of the truncated
+    clock — the only bound the layout needs. -/
+theorem D_le (T : Trace) : T.D ≤ 47 := by
+  rw [T.hD]
+  have := ladder_le T.d
+  omega
+
+/-- Every value of the trace is a 96-bit number: the rung is on the ladder, so
+    `D ≤ 25 ≤ 47` and `pack_lt_96` applies.  The hypothesis on the epoch is the
+    range of the clock — 2^(47−D) epochs of 2^(17+D) ns span 2^64 ns ≈ 584
+    years — and is the only thing the fit needs beyond the field widths. -/
+theorem A_lt (T : Trace) (i : Nat) (hE : T.epoch i < 2 ^ (47 - T.D)) :
+    T.A i < 2 ^ (64 + T.N) :=
+  pack_lt T.D_le T.hd hE (T.hnode i) (T.tlo_lt i) (T.hseq i)
+
+/-- The same at the two widths the library ships: 96 bits for `guid.G`. -/
+theorem A_lt_96 (T : Trace) (hN : T.N = 32) (i : Nat)
+    (hE : T.epoch i < 2 ^ (47 - T.D)) : T.A i < 2 ^ 96 := by
+  have h := T.A_lt i hE
+  rw [hN] at h
+  exact h
+
+/-- 122 bits of payload for `guid.X`. -/
+theorem A_lt_122 (T : Trace) (hN : T.N = 58) (i : Nat)
+    (hE : T.epoch i < 2 ^ (47 - T.D)) : T.A i < 2 ^ 122 := by
+  have h := T.A_lt i hE
+  rw [hN] at h
+  exact h
+
 /-- Lemma 5, transported to the model. -/
 theorem A_lt_of_epoch_lt (T : Trace) {i j : Nat} (h : T.epoch i < T.epoch j) :
     T.A i < T.A j := by
-  show pack T.D (T.D - 18) (T.epoch i) (T.node i) (T.tlo i) (T.seq i)
-     < pack T.D (T.D - 18) (T.epoch j) (T.node j) (T.tlo j) (T.seq j)
+  show pack T.N T.D T.d (T.epoch i) (T.node i) (T.tlo i) (T.seq i)
+     < pack T.N T.D T.d (T.epoch j) (T.node j) (T.tlo j) (T.seq j)
   exact pack_lt_of_epoch_lt (T.hnode i) (T.tlo_lt i) (T.hseq i) h
 
 /-! ## 3.  The theorems -/
@@ -323,12 +444,14 @@ end Local
 /-! ## 5.  Non-vacuity
 
 A structure with contradictory fields would make every theorem above trivially
-true, so we exhibit an execution satisfying all of them: drift `D = 21`
-(the library default, `Δ = 2^38 ns ≈ 274.9 s`), perfectly synchronized clocks,
-one allocation per drift window, hence `k = 1`.
+true, so we exhibit an execution satisfying all of them: drift code `d = 5`,
+the library default rung (`D = ladder 5 = 21`, `Δ = 2^38 ns ≈ 274.9 s`),
+perfectly synchronized clocks, one allocation per drift window, hence `k = 1`.
 -/
 
 def sane : Trace where
+  d := 5
+  hd := by decide
   D := 21
   hD := by decide
   delta := 2 ^ 38
@@ -337,6 +460,7 @@ def sane : Trace where
   k := 1
   tau := fun i => i * 2 ^ 38
   clk := fun i => i * 2 ^ 38
+  N := 32
   node := fun _ => 0
   seq := fun _ => 0
   hnode := fun _ => by show 0 < 2 ^ 32; decide
@@ -367,6 +491,14 @@ example : sane.A (sane.k + 1 - sane.k) ≤ sane.A (sane.k + 1) :=
 #print axioms Guid.Trace.k_ordered
 #print axioms Guid.Trace.inversion_window
 #print axioms Guid.Trace.displacement
+#print axioms Guid.Trace.A_lt
+#print axioms Guid.Trace.A_lt_96
+#print axioms Guid.Trace.A_lt_122
+#print axioms Guid.pack_lt
+#print axioms Guid.pack_lt_96
+#print axioms Guid.pack_lt_122
+#print axioms Guid.ladder_le
+#print axioms Guid.ladder_mono
 #print axioms Guid.pack_lt_of_epoch_lt
 #print axioms Guid.pack_le_of_suffix_le
 #print axioms Guid.sane

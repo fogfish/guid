@@ -30,15 +30,16 @@ import (
 	"github.com/fogfish/it/v2"
 )
 
-var drifts []time.Duration = []time.Duration{
-	30 * time.Second,
-	60 * time.Second,
-	130 * time.Second,
-	270 * time.Second,
-	540 * time.Second,
-	1000 * time.Second,
-	2100 * time.Second,
-	3600 * time.Second,
+// every rung of the drift ladder, in the order of the ⟨𝒅⟩ code
+var drifts []guid.Drift = []guid.Drift{
+	guid.Drift1ms,
+	guid.Drift16ms,
+	guid.Drift268ms,
+	guid.Drift2s,
+	guid.Drift17s,
+	guid.Drift275s,
+	guid.Drift1099s,
+	guid.Drift4398s,
 }
 
 // The memory layout is the contract of the types: L is exactly 64 bits and G
@@ -138,8 +139,8 @@ func TestAfter(t *testing.T) {
 		"NiiTRfl2BaVI1B.0": "NiiTTfl2BaVBHo8R",
 		"NiiTRfl2BaVI1B.1": "NiiTTfl2BaV71R8Q",
 	} {
-		av, _ := guid.FromStringG(a)
-		bv, _ := guid.FromStringG(b)
+		av, _ := fromStringG(a)
+		bv, _ := fromStringG(b)
 
 		it.Then(t).Should(
 			it.True(bv.After(av)),
@@ -296,7 +297,7 @@ func TestDiffLZero(t *testing.T) {
 	}
 }
 
-func TestToG(t *testing.T) {
+func TestCastGFromL(t *testing.T) {
 	for _, drift := range drifts {
 		c := guid.NewClock(
 			guid.WithDrift(drift),
@@ -305,7 +306,7 @@ func TestToG(t *testing.T) {
 		)
 
 		a := guid.NewL(c)
-		b := a.ToG(c)
+		b := gFromL(c, a)
 
 		it.Then(t).Should(
 			it.Equal(b.Time(), a.Time()),
@@ -315,7 +316,7 @@ func TestToG(t *testing.T) {
 	}
 }
 
-func TestToL(t *testing.T) {
+func TestCastLFromG(t *testing.T) {
 	for _, drift := range drifts {
 		c := guid.NewClock(
 			guid.WithDrift(drift),
@@ -324,7 +325,7 @@ func TestToL(t *testing.T) {
 		)
 
 		a := guid.NewG(c)
-		b := a.ToL()
+		b := lFromG(a)
 
 		it.Then(t).Should(
 			it.Equal(b.Time(), a.Time()),
@@ -343,7 +344,7 @@ func TestCastRoundTrip(t *testing.T) {
 		)
 
 		a := guid.NewG(c)
-		b := a.ToL().ToG(c)
+		b := gFromL(c, lFromG(a))
 
 		it.Then(t).Should(
 			it.Equal(a, b),
@@ -360,19 +361,19 @@ func TestCodecG(t *testing.T) {
 
 		a := guid.NewG(c)
 
-		b, err := guid.FromBytesG(a.Bytes())
+		b, err := fromBytesG(a.Bytes())
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equal(b, a),
 		)
 
-		d, err := guid.FromStringG(a.String())
+		d, err := fromStringG(a.String())
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equal(d, a),
 		)
 
-		x, err := guid.FromBase62G(a.Base62())
+		x, err := fromBase62G(a.Base62())
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equal(x, a),
@@ -380,10 +381,10 @@ func TestCodecG(t *testing.T) {
 	}
 
 	t.Run("Errors", func(t *testing.T) {
-		_, eb62 := guid.FromBase62G("......")
-		_, elen := guid.FromBase62G("1111111111111111111111")
-		_, ebin := guid.FromBytesG([]byte("xxxxxx"))
-		_, estr := guid.FromStringG("xxxxxx")
+		_, eb62 := fromBase62G("......")
+		_, elen := fromBase62G("1111111111111111111111")
+		_, ebin := fromBytesG([]byte("xxxxxx"))
+		_, estr := fromStringG("xxxxxx")
 
 		it.Then(t).ShouldNot(
 			it.Nil(eb62),
@@ -404,19 +405,19 @@ func TestCodecL(t *testing.T) {
 
 		a := guid.NewL(c)
 
-		b, err := guid.FromBytesL(a.Bytes())
+		b, err := fromBytesL(a.Bytes())
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equal(b, a),
 		)
 
-		d, err := guid.FromStringL(a.String())
+		d, err := fromStringL(a.String())
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equal(d, a),
 		)
 
-		x, err := guid.FromBase62L(a.Base62())
+		x, err := fromBase62L(a.Base62())
 		it.Then(t).Should(
 			it.Nil(err),
 			it.Equal(x, a),
@@ -424,10 +425,10 @@ func TestCodecL(t *testing.T) {
 	}
 
 	t.Run("Errors", func(t *testing.T) {
-		_, eb62 := guid.FromBase62L("......")
-		_, elen := guid.FromBase62L("1111111111111111111111")
-		_, ebin := guid.FromBytesL([]byte("xxxxxx"))
-		_, estr := guid.FromStringL("xxxxxx")
+		_, eb62 := fromBase62L("......")
+		_, elen := fromBase62L("1111111111111111111111")
+		_, ebin := fromBytesL([]byte("xxxxxx"))
+		_, estr := fromStringL("xxxxxx")
 
 		it.Then(t).ShouldNot(
 			it.Nil(eb62),
@@ -448,14 +449,14 @@ var orders = []struct {
 	{"descending", guid.WithClockInverse()},
 }
 
-func TestFromTL(t *testing.T) {
+func TestFromTimeL(t *testing.T) {
 	for _, order := range orders {
 		for _, drift := range drifts {
 			c := guid.NewClock(guid.WithDrift(drift), order.clock)
 			n := time.Now().Round(10 * time.Millisecond)
 
-			a := guid.FromTL(c, n)
-			b := a.ToG(c)
+			a := fromTimeL(c, n)
+			b := gFromL(c, a)
 
 			it.Then(t).Should(
 				it.Equal(a.Epoch().Round(10*time.Millisecond), n),
@@ -465,13 +466,13 @@ func TestFromTL(t *testing.T) {
 	}
 }
 
-func TestFromTG(t *testing.T) {
+func TestFromTimeG(t *testing.T) {
 	for _, order := range orders {
 		for _, drift := range drifts {
 			c := guid.NewClock(guid.WithDrift(drift), guid.WithNodeID(0xffffffff), order.clock)
 			n := time.Now().Round(10 * time.Millisecond)
 
-			a := guid.FromTG(c, n)
+			a := fromTimeG(c, n)
 			v := a.Epoch().Round(10 * time.Millisecond)
 
 			it.Then(t).Should(
@@ -487,10 +488,10 @@ func TestFromTG(t *testing.T) {
 func TestFromTOrder(t *testing.T) {
 	for _, order := range orders {
 		c := guid.NewClock(order.clock)
-		past := guid.FromTL(c, time.Now().Add(-time.Hour))
+		past := fromTimeL(c, time.Now().Add(-time.Hour))
 
 		a := guid.NewL(c)
-		g := guid.FromTG(c, time.Now().Add(-time.Hour))
+		g := fromTimeG(c, time.Now().Add(-time.Hour))
 		b := guid.NewG(c)
 
 		if order.name == "ascending" {
@@ -522,7 +523,7 @@ func TestEpoch(t *testing.T) {
 		it.Then(t).Should(
 			it.Equal(a.Epoch().Round(10*time.Millisecond), n),
 			it.Equal(b.Epoch().Round(10*time.Millisecond), n),
-			it.Equal(a.ToL().Epoch().Round(10*time.Millisecond), n),
+			it.Equal(lFromG(a).Epoch().Round(10*time.Millisecond), n),
 		)
 	}
 }
@@ -633,8 +634,8 @@ func TestSplit(t *testing.T) {
 	it.Then(t).Should(
 		it.Equiv(a.Bytes(), a.Split(8)),
 		it.Equiv(b.Bytes(), b.Split(8)),
-		it.Equal(guid.FoldG(8, a.Split(8)), a),
-		it.Equal(guid.FoldL(8, b.Split(8)), b),
+		it.Equal(foldG(8, a.Split(8)), a),
+		it.Equal(foldL(8, b.Split(8)), b),
 	)
 }
 

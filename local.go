@@ -44,7 +44,7 @@ type L uint64
 //
 // The ⟨𝒅⟩ drift is taken from the clock, see WithDrift. A local value has no
 // ⟨𝒍⟩ fraction for the drift to rank against, so the code only travels with the
-// value, to be restored by ToG.
+// value, to be restored by G.FromL.
 func NewL(clock Chronos) L {
 	t, seq := clock.T()
 	return makeL(clock.Drift(), t, seq)
@@ -56,17 +56,25 @@ func ZeroL(clock Chronos) L {
 	return makeL(clock.Drift(), 0, 0)
 }
 
-func makeL(drift, t, seq uint64) L {
-	d := (drift - driftZ) << (64 - bitsDrift)
+// makeL packs the three fractions into the 64-bit value, positionally:
+//
+//	⟦makeL⟧ = 𝒅·2⁶¹ + 𝒙·2¹⁴ + 𝒔
+//
+// which is Proposition 2 of doc/proof.md. Unlike G the local value keeps the
+// whole truncated clock ⟨𝒙⟩ above ⟨𝒔⟩ — it is not split around a location
+// field, because there is no location field, so the rung of the ladder does
+// not affect the layout at all, only what G.FromL restores.
+func makeL(drift Drift, t, seq uint64) L {
+	d := (uint64(drift) & maskDrift) << (SizeL*8 - bitsDrift)
 	x := t >> bitsSeqDrift << bitsSeq
 
-	return L(d | x | seq)
+	return L(d | x | seq&maskSeq)
 }
 
-// drift returns the ⟨𝒅⟩ fraction as the number of bits of ⟨𝒕⟩ that rank below
-// ⟨𝒍⟩ once the value is cast to G. The code occupies the 3 most significant
-// bits of the value.
-func (uid L) drift() uint64 { return uint64(uid)>>(64-bitsDrift) + driftZ }
+// Drift returns the ⟨𝒅⟩ fraction, the rung of the ladder the value was
+// allocated with, which ranks ⟨𝒕⟩ against ⟨𝒍⟩ once the value is cast to G. The
+// code occupies the 3 most significant bits of the value.
+func (uid L) Drift() Drift { return Drift(uint64(uid) >> (SizeL*8 - bitsDrift)) }
 
 // Equal compares k-ordered values, returns true if values are equal
 func (uid L) Equal(b L) bool { return uid == b }
@@ -102,13 +110,7 @@ func (uid L) Epoch() time.Time {
 
 // Diff approximates distance between k-ordered values.
 func (uid L) Diff(b L) L {
-	return makeL(uid.drift(), uid.Time()-b.Time(), uid.Seq()-b.Seq())
-}
-
-// ToG casts locally unique 64-bit value to globally unique 96-bit one by
-// stamping it with the ⟨𝒍⟩ fraction of the clock.
-func (uid L) ToG(clock Chronos) G {
-	return makeG(clock.Node(), uid.drift(), uid.Time(), uid.Seq())
+	return makeL(uid.Drift(), uid.Time()-b.Time(), uid.Seq()-b.Seq())
 }
 
 // Bytes encodes k-ordered value to byte slice
@@ -158,61 +160,88 @@ func (uid *L) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	v, err := FromStringL(val)
+	return uid.FromString(val)
+}
+
+// MarshalText implements encoding.TextMarshaler, so that the value travels
+// through any codec that speaks it — yaml, toml, a struct tag, a map key.
+func (uid L) MarshalText() ([]byte, error) {
+	return []byte(uid.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler, see FromString.
+func (uid *L) UnmarshalText(b []byte) error {
+	return uid.FromString(string(b))
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler, see Bytes.
+func (uid L) MarshalBinary() ([]byte, error) {
+	return uid.Bytes(), nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler, see FromBytes.
+func (uid *L) UnmarshalBinary(b []byte) error {
+	return uid.FromBytes(b)
+}
+
+// Fold composes the value from a byte slice. It is the inverse of Split, the
+// value n being the number of bits each cell of the slice carries.
+func (uid *L) Fold(n uint64, bytes []byte) {
+	_, lo := fold(SizeL*8, n, bytes)
+	*uid = L(lo)
+}
+
+// FromBytes decodes the value from its wire format. It is the inverse of
+// Bytes.
+func (uid *L) FromBytes(val []byte) error {
+	if len(val) != SizeL {
+		return fmt.Errorf("malformed k-order number: %v", val)
+	}
+
+	*uid = L(binary.BigEndian.Uint64(val))
+	return nil
+}
+
+// FromString decodes the value from the lexicographically sortable string. It
+// is the inverse of String.
+func (uid *L) FromString(val string) error {
+	if len(val) != SizeString {
+		return fmt.Errorf("malformed k-order number: %v", val)
+	}
+
+	uid.Fold(4, decode64(val))
+	return nil
+}
+
+// FromBase62 decodes the value from the base62 string. It is the inverse of
+// Base62.
+func (uid *L) FromBase62(val string) error {
+	b, err := decode62([]byte(val))
 	if err != nil {
 		return err
 	}
 
-	*uid = v
-	return nil
-}
-
-// FoldL composes k-ordered value from byte slice. The operation is inverse
-// to Split.
-func FoldL(n uint64, bytes []byte) L {
-	_, lo := fold(SizeL*8, n, bytes)
-	return L(lo)
-}
-
-// FromBytesL decodes k-ordered value from bytes
-func FromBytesL(val []byte) (L, error) {
-	if len(val) != SizeL {
-		return 0, fmt.Errorf("malformed k-order number: %v", val)
-	}
-
-	return L(binary.BigEndian.Uint64(val)), nil
-}
-
-// FromStringL decodes k-ordered value from lexicographically sortable string
-func FromStringL(val string) (L, error) {
-	if len(val) != SizeString {
-		return 0, fmt.Errorf("malformed k-order number: %v", val)
-	}
-
-	return FoldL(4, decode64(val)), nil
-}
-
-// FromBase62L decodes k-ordered value from base62 string
-func FromBase62L(val string) (L, error) {
-	b, err := decode62([]byte(val))
-	if err != nil {
-		return 0, err
-	}
-
 	// base62 is a positional numeral system, it does not carry leading zeros
 	if len(b) > SizeL {
-		return 0, fmt.Errorf("malformed k-order number: %v", val)
+		return fmt.Errorf("malformed k-order number: %v", val)
 	}
 
 	var buf [SizeL]byte
 	copy(buf[SizeL-len(b):], b)
-	return L(binary.BigEndian.Uint64(buf[:])), nil
+	*uid = L(binary.BigEndian.Uint64(buf[:]))
+	return nil
 }
 
-// FromTL converts a wall clock instant to a locally unique 64-bit k-ordered value.
+// FromTime sets the value to a wall clock instant.
 //
 // The instant is placed into the time domain of the clock, so that the value
 // sorts against values the clock allocates, see TimeOrder.
-func FromTL(clock Chronos, t time.Time) L {
-	return makeL(clock.Drift(), tick(clock.Order(), t), 0)
+func (uid *L) FromTime(clock Chronos, t time.Time) {
+	*uid = makeL(clock.Drift(), tick(clock.Order(), t), 0)
+}
+
+// FromG casts a globally unique 96-bit value to this locally unique 64-bit one
+// by dropping the ⟨𝒍⟩ fraction.
+func (uid *L) FromG(val G) {
+	*uid = makeL(val.Drift(), val.Time(), val.Seq())
 }

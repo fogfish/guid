@@ -22,53 +22,6 @@ import (
 	"time"
 )
 
-// zero point for drift.
-//
-// ⟨𝒅⟩ = 𝑫 − driftZ, and the 96-bit layout places the 32-bit ⟨𝒍⟩ fraction so
-// that its top 𝑫 − 18 bits fall above the Hi/Lo boundary, see splitNode. 𝑫 = 18
-// is therefore the smallest drift the layout admits: ⟨𝒍⟩ then occupies exactly
-// the top 32 bits of Lo and ⟨𝑬⟩ the 29 bits below ⟨𝒅⟩. A smaller 𝑫 would spill
-// ⟨𝑬⟩ across the word boundary, which splitT and splitNode do not express.
-// The floor is geometry, not policy.
-const driftZ = 18
-
-// the drift assumed by a clock that was not configured with WithDrift
-const driftDefault = 274 * time.Second
-
-// driftInBits converts a time drift into the number of ⟨𝒕⟩ bits that rank
-// below ⟨𝒍⟩. E.g. if the application tolerates 2 min of clock disagreement
-// then the last 20 bits of the timestamp become less significant than the
-// location.
-//
-// The code is stored as 3 bits, so the ladder has 8 rungs. It is bounded below
-// by driftZ, the smallest drift the 96-bit layout admits, and the rung spacing
-// is a factor of two because ⟨𝒅⟩ selects a bit position.
-//
-// The drift a value was allocated with must be constant across a keyspace:
-// ⟨𝒅⟩ is the most significant fraction, so values allocated with different
-// drift are segregated rather than interleaved. This is why the drift is a
-// property of Chronos and not an argument of the allocators.
-func driftInBits(drift time.Duration) uint64 {
-	switch {
-	case drift <= 34*time.Second:
-		return driftZ
-	case drift <= 68*time.Second:
-		return driftZ + 1
-	case drift <= 137*time.Second:
-		return driftZ + 2
-	case drift <= 274*time.Second:
-		return driftZ + 3
-	case drift <= 549*time.Second:
-		return driftZ + 4
-	case drift <= 1099*time.Second:
-		return driftZ + 5
-	case drift <= 2199*time.Second:
-		return driftZ + 6
-	default:
-		return driftZ + 7
-	}
-}
-
 // epoch maps a ⟨𝒕⟩ fraction back to the wall clock instant it was allocated at.
 //
 // The domain the value belongs to is recovered from ⟨𝒕⟩ itself, no clock is
@@ -102,43 +55,40 @@ func tick(order TimeOrder, t time.Time) uint64 {
 	return uint64(t.UnixNano())
 }
 
-// splits ⟨𝒕⟩ faction (timestamp) to hi and lo bits of K order value
-func splitT(t uint64, drift uint64) (uint64, uint64) {
-	//
-	//   3    47 - drift             32bit      drift   14
-	//  |-|-------------------|--------!-------|-----|-------|
-	//  ^                         b    ^   a                 ^
-	// 96                             64                     0
-	//
-	// 14 bits of time is exchange for seq
-	//  3 bits is reserved for drift
-	//    initial timestamp is reduced by 17 bits ~ 10⁶ nanoseconds
-	x := t >> (14 + 3)
-	a := 64 - 14 - drift
-	b := 32 - a
+// place puts a field at bit position p of a value held as the pair (hi, lo),
+// so that the field contributes hi·2⁶⁴ + lo to it.
+//
+// The pair is the base-2⁶⁴ decomposition of the value, whatever the value's
+// width: 96 bits for a G, 122 for the payload of an X. Nothing here knows
+// which, the caller supplies the positions.
+//
+// The value is packed positionally, exactly as Proposition 1 of doc/proof.md
+// states it, rather than by hand-placed shifts per drift regime. A field is
+// therefore laid out by the same expression whether it falls entirely inside
+// lo, entirely inside hi, or straddles the boundary between them — which is
+// what makes the whole ladder of drifts reachable, see driftLadder.
+//
+// Shift counts of 64 and above yield zero in Go, so p = 0 and p ≥ 64 need no
+// special case.
+func place(v, p uint64) (hi, lo uint64) {
+	if p >= 64 {
+		return v << (p - 64), 0
+	}
 
-	lo := (x << (a + 14)) >> a
-	hi := (x >> drift) << b
-	dd := (drift - driftZ) << 29
-
-	return hi | dd, lo
+	return v >> (64 - p), v << p
 }
 
-// split ⟨𝒍⟩ faction (location) to hi and lo bits of K order value
-func splitNode(node, drift uint64) (uint64, uint64) {
-	//
-	//   3    47 - drift             32bit      drift   14
-	//  |-|-------------------|--------!-------|-----|-------|
-	//  ^                         b    ^   a                 ^
-	// 96                             64                     0
-	//
-	a := 64 - 14 - drift
-	b := 32 - a
+// extract reads the w-bit field at bit position p back out of the pair
+// (hi, lo). It is the inverse of place for a field of w bits.
+func extract(hi, lo, p, w uint64) uint64 {
+	var v uint64
+	if p >= 64 {
+		v = hi >> (p - 64)
+	} else {
+		v = lo>>p | hi<<(64-p)
+	}
 
-	lo := node << (drift + 14)
-	hi := node >> (32 - b)
-
-	return hi, lo
+	return v & (1<<w - 1)
 }
 
 func split(hi, lo, size, n uint64, bytes []byte) {

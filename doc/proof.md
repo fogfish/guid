@@ -22,9 +22,15 @@ Statement (2) is additionally machine-checked in Lean 4 — see
 [proof.lean](proof.lean) and §6.
 
 The proofs are stated against the actual bit layout produced by
-[`makeG`](../global.go#L66) / [`makeL`](../local.go#L59) and the comparison operators
-[`G.Before`](../global.go#L95) / [`L.Before`](../local.go#L75). §1 establishes that
+[`makeG`](../global.go#L77) / [`makeL`](../local.go#L67) and the comparison operators
+[`G.Before`](../global.go#L110) / [`L.Before`](../local.go#L83). §1 establishes that
 layout; everything after that is arithmetic on a positional numeral system.
+
+They cover [`makeX`](../extended.go#L139) too. `X` is the same schema at 128
+bits — the same fractions in the same order, the same clock, sequencer and
+drift ladder — with `⟨𝒍⟩` widened to 58 bits and 6 bits given over to the
+RFC 9562 version and variant fields. §1.2′ discharges those two differences
+once, after which every statement below holds for `X` verbatim.
 
 The layout is unchanged from v2. What v3 changed is the *storage* of it: `G` is
 the 96-bit number in big-endian bytes and `L` is the 64-bit number itself, two
@@ -39,34 +45,60 @@ what that buys the proofs.
 
 | symbol | meaning | width |
 |---|---|---|
-| `𝑫`   | drift parameter, `driftInBits` value, `𝑫 ∈ {18,…,25}` | — |
-| `𝒅`   | drift code stored in the value, `𝒅 = 𝑫 − 18` | 3 bit |
+| `𝑫`   | drift parameter, the rung's `Drift.Bits` value, `𝑫 ∈ {3,7,11,14,17,21,23,25}` | — |
+| `𝒅`   | drift code stored in the value, the index of the rung, `𝒅 ∈ {0,…,7}` | 3 bit |
 | `𝒕`   | clock reading in nanoseconds | 64 bit |
 | `𝒙`   | truncated clock, `𝒙 = ⌊𝒕 / 2¹⁷⌋` (unit ≈ 131 µs) | 47 bit |
 | `𝑬`   | *epoch*, `𝑬 = ⌊𝒙 / 2^𝑫⌋ = ⌊𝒕 / 2^(17+𝑫)⌋` | 47−𝑫 bit |
 | `𝒙ₗ`  | low clock bits, `𝒙ₗ = 𝒙 mod 2^𝑫` | 𝑫 bit |
-| `𝒍`   | node (allocator) identity | 32 bit |
+| `𝒍`   | node (allocator) identity | 32 bit in `G`, 58 bit in `X` |
 | `𝒔`   | per-process sequence, `𝒔 = 𝒏 mod 2¹⁴` for the `𝒏`-th call | 14 bit |
 | `Δ`   | **drift window** `Δ = 2^(17+𝑫)` nanoseconds | — |
-| `⟦𝒖⟧` | numeric value of a k-ordered value as an integer; for `G` the 96-bit big-endian number its bytes hold, for `L` the 64-bit number itself | — |
-| `𝒖.hi`, `𝒖.lo` | the words of a `G`, `⟦𝒖⟧ = 𝒖.hi·2⁶⁴ + 𝒖.lo`, see [`G.words`](../global.go#L76) | 32, 64 bit |
+| `⟦𝒖⟧` | numeric value of a k-ordered value as an integer; for `G` the 96-bit big-endian number its bytes hold, for `X` the 128-bit one, for `L` the 64-bit number itself | — |
+| `𝒖.hi`, `𝒖.lo` | the words of a `G`, `⟦𝒖⟧ = 𝒖.hi·2⁶⁴ + 𝒖.lo`, see [`G.words`](../global.go#L91) | 32, 64 bit |
+| `⟪𝒖⟫` | *payload* of an `X`, the 122 bits left once the two fields RFC 9562 fixes are removed, see §1.2′ | 122 bit |
 
 `Δ` is the quantity the user configures, on the clock and not per allocation,
-with `WithDrift`. [`driftInBits`](../common.go#L51) maps a requested tolerance
-to the smallest `𝑫` whose window covers it:
+with `WithDrift`. `⟨𝒅⟩` is 3 bits, so the ladder has eight rungs while the
+layout admits every `𝑫 ∈ {0,…,25}`; the rungs are therefore *chosen* rather
+than contiguous. [`driftLadder`](../drift.go#L86) is that table and
+[`DriftOf`](../drift.go#L107) maps a requested tolerance to the smallest rung
+whose window covers it:
 
-| `𝑫` | 18 | 19 | 20 | 21 *(default)* | 22 | 23 | 24 | 25 |
+| `𝒅` | 0 | 1 | 2 | 3 | 4 | 5 *(default)* | 6 | 7 |
 |---|---|---|---|---|---|---|---|---|
-| `Δ` | 34.4 s | 68.7 s | 137.4 s | **274.9 s** | 549.8 s | 1099.5 s | 2199.0 s | 4398.0 s |
+| `𝑫` | 3 | 7 | 11 | 14 | 17 | **21** | 23 | 25 |
+| `Δ` | 1.05 ms | 16.8 ms | 268 ms | 2.15 s | 17.2 s | **274.9 s** | 1099 s | 4398 s |
+| constant | `Drift1ms` | `Drift16ms` | `Drift268ms` | `Drift2s` | `Drift17s` | **`Drift275s`** | `Drift1099s` | `Drift4398s` |
 
-`𝑫 = 18` is the floor, and it is geometry rather than policy: `𝒃 = 𝑫 − 18` is
-the number of `⟨𝒍⟩` bits that fall above the `hi`/`lo` boundary, so a smaller
-`𝑫` would spill `⟨𝑬⟩` across the word boundary — a layout neither `splitT` nor
-`splitNode` expresses. The ladder is 3 bits wide, so 8 rungs exhaust it.
+The ladder is a property of `⟨𝒅⟩` rather than of any one type, so `L`, `G` and
+`X` share it: the rung means the same thing and the code stored in a value has
+the same reading whichever width the value is.
+
+The ladder spends four rungs below one second and four above it. The lower
+four reach the ordering class of Snowflake and UUIDv7 — at `𝑫 = 3` the window
+is a millisecond, and at `𝑫 = 0`, reachable by the layout though not on the
+ladder, `⟨𝒙ₗ⟩` vanishes altogether and the field order `⟨𝒅⟩·⟨𝑬⟩·⟨𝒍⟩·⟨𝒔⟩` *is*
+Snowflake's. The upper four are failover budgets, which is what the library was
+written for; `𝒅 = 5` remains the default and `𝒅 = 7` the top rung, so an
+existing deployment has a home on the new ladder.
+
+The bounds on `𝑫` are both properties of the schema rather than of the machine
+word. Above, `⟨𝑬⟩` is `47 − 𝑫` bits and an epoch narrower than 22 bits no
+longer spans the range of the clock, which caps the ladder at `𝑫 = 25`. Below,
+`𝑫 = 0` is simply the point where there are no low clock bits left to place.
+
+> Versions of this library up to v3 floored the ladder at `𝑫 = 18`, and that
+> floor *was* geometry: the value was assembled by hand-placed shifts that
+> required the top `𝑫 − 18` bits of `⟨𝒍⟩` to fall above the `hi`/`lo` boundary
+> of the two machine words, so a smaller `𝑫` — which spills `⟨𝑬⟩` across that
+> boundary instead — was a layout the arithmetic could not express. Proposition
+> 1 never depended on it; `makeG` now places each fraction at the bit position
+> the schema gives it, and the floor is gone with the shifts that caused it.
 
 ### 1.2 Proposition 1 (global layout)
 
-For `𝑫 ∈ {18,…,25}`, `𝒍 < 2³²`, `𝒔 < 2¹⁴`:
+For `𝑫 ∈ {0,…,25}`, `𝒅 < 2³`, `𝒍 < 2³²`, `𝒔 < 2¹⁴`:
 
 ```
   ⟦makeG(𝒍, 𝑫, 𝒕, 𝒔)⟧ = 𝒅·2⁹³ + 𝑬·2^(46+𝑫) + 𝒍·2^(14+𝑫) + 𝒙ₗ·2¹⁴ + 𝒔
@@ -80,29 +112,157 @@ i.e. the 96-bit word is the concatenation
     ⟨𝒅⟩      ⟨𝑬⟩          ⟨𝒍⟩        ⟨𝒙ₗ⟩      ⟨𝒔⟩
 ```
 
-*Proof.* Write `𝒂 = 64 − 14 − 𝑫` and `𝒃 = 32 − 𝒂 = 𝑫 − 18`, as in
-[`splitT`](../common.go#L73) / [`splitNode`](../common.go#L95).
+*Proof.* [`makeG`](../global.go#L77) is the identity written out. It computes
+`𝒙 = 𝒕 ≫ 17`, `𝑬 = 𝒙 ≫ 𝑫`, `𝒙ₗ = 𝒙 mod 2^𝑫`, and calls
+[`place`](../common.go#L73) once per fraction with the bit position the schema
+gives it — `𝒅` at 93, `𝑬` at `46+𝑫`, `𝒍` at `14+𝑫`, `𝒙ₗ` at 14, `𝒔` at 0 —
+then ORs the results and writes the pair out big-endian with `joinG`.
 
-* `splitT` computes `lo = (𝒙 ≪ (𝒂+14)) ≫ 𝒂`. Since `𝒂 + 14 = 64 − 𝑫`, only the
-  low `𝑫` bits of `𝒙` survive the left shift inside a 64-bit register, and the
-  subsequent right shift by `𝒂` places them at positions `14 … 13+𝑫` of `Lo`.
-  Hence `lo_t = 𝒙ₗ·2¹⁴`.
-* `splitT` computes `hi = (𝒙 ≫ 𝑫) ≪ 𝒃 = 𝑬·2^𝒃`, occupying bits `𝒃 … 28` of `hi`
-  (`𝑬` has `47 − 𝑫` bits), and `dd = (𝑫−18) ≪ 29 = 𝒅·2²⁹`.
-* `splitNode` computes `lo = 𝒍 ≪ (𝑫+14)`, of which the low `𝒂 = 50 − 𝑫` bits of
-  `𝒍` survive in `lo` at positions `𝑫+14 … 63`, and `hi = 𝒍 ≫ (32−𝒃)`, the top
-  `𝒃` bits of `𝒍` at positions `0 … 𝒃−1` of `hi`.
+`place(𝒗, 𝒑)` returns the pair `(𝒗 ≫ (64−𝒑), 𝒗 ≪ 𝒑)` for `𝒑 < 64` and
+`(𝒗 ≪ (𝒑−64), 0)` otherwise, which in both cases is the base-2⁶⁴ decomposition
+of `𝒗·2^𝒑`: Go defines a shift by 64 or more as zero, so `𝒑 = 0` and `𝒑 ≥ 64`
+need no separate case, and a fraction that straddles the `hi`/`lo` boundary is
+placed by the same expression as one that does not. Hence each call contributes
+exactly `𝒗·2^𝒑` to `hi·2⁶⁴ + lo`.
 
-`makeG` ORs these into `hi = hi_t | hi_l`, `lo = lo_l | lo_t | 𝒔`, then `joinG`
-writes the pair out big-endian. The occupied ranges are pairwise disjoint and
-contiguous, and the node halves are adjacent across the `hi`/`lo` boundary
-(`𝒃` bits ending at `hi` bit 0, `𝒂` bits starting at `lo` bit 63), so the OR is
-an addition and the claimed positional form follows. Widths check out:
-`3 + (47−𝑫) + 32 + 𝑫 + 14 = 96`. ∎
+The occupied ranges are pairwise disjoint and contiguous, since the widths sum
+to `3 + (47−𝑫) + 32 + 𝑫 + 14 = 96` for every `𝑫 ≤ 47` and each field is placed
+immediately above the one below it. Disjoint ranges make the OR an addition, so
 
-> This proposition was also verified differentially against the implementation
-> for every `𝑫 ∈ {18,…,25}` over 160 000 random `(𝒍, 𝒕, 𝒔)` triples: the
-> `big.Int` model and `⟦makeG(...)⟧` agree bit for bit.
+```
+  ⟦makeG⟧ = 𝒅·2⁹³ + 𝑬·2^(46+𝑫) + 𝒍·2^(14+𝑫) + 𝒙ₗ·2¹⁴ + 𝒔
+```
+
+which is the claim. The bounds `𝑬 < 2^(47−𝑫)` and `𝒙ₗ < 2^𝑫` hold by
+construction from a 64-bit `𝒕`, and `𝒍`, `𝒔` are masked to their widths. ∎
+
+The word boundary has left the argument entirely — it is a fact about the
+registers `hi` and `lo` are held in, not about the value, which is why the
+range of the proposition is now the whole of `{0,…,25}`. `Guid.pack_lt_96` in
+[proof.lean](proof.lean) is the machine-checked half of the same statement:
+the five fields fit 96 bits for every `𝑫 ≤ 47`.
+
+`G.Time` and `G.Node` invert the packing with
+[`extract`](../common.go#L83), reading the field at the same position and
+width, so they are correct by the same argument.
+
+> This proposition is also verified differentially against the implementation
+> by [`TestPropositionG`](../drift_test.go), for every rung of the ladder over
+> 160 000 random `(𝒍, 𝒕, 𝒔)` triples: the `big.Int` model of the positional
+> form and `⟦makeG(...)⟧` agree bit for bit, and `Time`, `Node`, `Seq` return
+> the fields that went in. Five of the eight rungs have `𝑫 < 18`, where `⟨𝑬⟩`
+> spills across the word boundary, so the regime that the old layout could not
+> express is the one the test mostly exercises.
+
+### 1.2′ Proposition 1′ (extended layout)
+
+`X` is the same schema at 128 bits, laid out so that the value is also a
+well-formed RFC 9562 UUID of version 8. Two things change and nothing else
+does: `⟨𝒍⟩` widens from 32 to 58 bits, and 6 of the 128 bits are spent on the
+version and variant fields the RFC fixes.
+
+Write `⟪𝒖⟫` for the **payload**, the 122-bit positional number the five
+fractions occupy. For `𝑫 ∈ {0,…,25}`, `𝒅 < 2³`, `𝒍 < 2⁵⁸`, `𝒔 < 2¹⁴`:
+
+```
+  ⟪makeX(𝒍, 𝑫, 𝒕, 𝒔)⟫ = 𝒅·2¹¹⁹ + 𝑬·2^(72+𝑫) + 𝒍·2^(14+𝑫) + 𝒙ₗ·2¹⁴ + 𝒔
+```
+
+i.e. the payload is the concatenation
+
+```
+     3      47 − 𝑫            58             𝑫        14
+   |---|--------------|------------------|----------|--------|
+    ⟨𝒅⟩      ⟨𝑬⟩             ⟨𝒍⟩           ⟨𝒙ₗ⟩       ⟨𝒔⟩
+```
+
+and the value is that payload with the two constant fields spliced in:
+
+```
+  payload bit 𝒑  ↦  value bit  𝒑        for 𝒑 ∈ [0, 47]
+                               𝒑 + 4    for 𝒑 ∈ [48, 59]
+                               𝒑 + 6    for 𝒑 ∈ [60, 121]
+```
+
+counting from the most significant bit, as RFC 9562 does; value bits 48…51 are
+the version `0b1000` and bits 64…65 the variant `0b10`.
+
+*Proof of the payload identity.* [`makeX`](../extended.go#L139) does not place
+fractions at computed positions the way `makeG` does. It transcribes
+`Guid.pack` of [proof.lean](proof.lean),
+
+```lean
+def pack (D d E l x s : Nat) : Nat :=
+  (((d * 2 ^ (47 - D) + E) * 2 ^ 32 + l) * 2 ^ D + x) * 2 ^ 14 + s
+```
+
+with `2³²` replaced by `2⁵⁸`, and evaluates it in Horner form over a 128-bit
+accumulator: [`horner`](../extended.go#L161) computes `𝒗·2^𝒌 + 𝒂` for `𝒂 < 2^𝒌`
+on the pair `(hi, lo)`, and the four calls supply `(47−𝑫, 𝑬)`, `(58, 𝒍)`,
+`(𝑫, 𝒙ₗ)`, `(14, 𝒔)` in that order starting from `𝒅`. Expanding the Horner form
+*is* the claimed sum, so the proposition holds by the definition rather than by
+an argument about bit placement — which is the reason for writing it this way.
+The accumulator holds 3, then `50−𝑫`, `108−𝑫`, `108` and finally 122 bits, so
+no step overflows 128, by the same width identity as before:
+`3 + (47−𝑫) + 58 + 𝑫 + 14 = 122`. ∎
+
+The width half of this is machine-checked. `Guid.pack` in
+[proof.lean](proof.lean) takes the node width `𝑵` as a parameter, `Guid.pack_lt`
+proves the layout occupies `64 + 𝑵` bits for every `𝑫 ≤ 47`, and
+`Guid.pack_lt_122` is that at `𝑵 = 58` — the payload of an `X` is 122 bits,
+leaving exactly the 6 the RFC reserves. Because the whole development is
+abstract in `𝑵`, Part I and Part II hold for `X` by the same proof terms that
+prove them for `G`; see §6.
+
+*Proof of the splice.* [`splice`](../extended.go#L177) cuts the payload into
+the three runs the two reserved fields leave — `[0,62)`, `[62,74)`, `[74,122)`
+counted upward from the least significant bit — and places each with
+[`place`](../common.go#L73) at `0`, `64` and `80`, alongside the version at
+`76` and the variant at `62`. By the argument of §1.2 each call contributes
+exactly `𝒗·2^𝒑`, and the five ranges are pairwise disjoint and together cover
+all 128 bits, so the OR is an addition and the map above is realised exactly.
+It is a permutation of bit positions and a pair of constants; it does not
+depend on `𝑫`. [`X.payload`](../extended.go#L189) is the same three placements
+in reverse, so `⟪·⟫` is recovered exactly. ∎
+
+**The version and variant are order-transparent.** This is what has to be shown
+for §1.4–§1.5 to carry over, since the two fields interrupt the field layout of
+a schema whose whole premise is that byte order is sort order.
+
+> *Claim.* For values `𝒂`, `𝒃` of `X`, `⟦𝒂⟧ < ⟦𝒃⟧ ⟺ ⟪𝒂⟫ < ⟪𝒃⟫`.
+>
+> *Proof.* Compare most significant bit first. At every version or variant
+> position the two values hold the same constant — they are constants of the
+> format, present in every value — so the comparison neither concludes nor
+> reverses there and falls through to the next position. What remains is the
+> comparison of the payload bits in their original relative order, which is
+> lexicographic comparison of `⟪𝒂⟫` against `⟪𝒃⟫`. ∎
+
+Hence Lemma 1 holds for `X` — [`X.Before`](../extended.go#L222) compares the
+pair `(hi, lo)` lexicographically, which is numeric order on `⟦·⟧`, which by
+the claim is numeric order on `⟪·⟫` — and so does Lemma 2, over the fields
+`(𝑬, 𝒍, 𝒙ₗ, 𝒔)` of the payload. `bytes.Compare` over the raw 16 bytes agrees
+with both, as for `G`.
+
+Everything in Parts I and II therefore applies to `X` unchanged, with `2³²`
+replaced by `2⁵⁸` in the residue bound of §4.2: the field order
+`⟨𝒅⟩ ≻ ⟨𝑬⟩ ≻ ⟨𝒍⟩ ≻ ⟨𝒙ₗ⟩ ≻ ⟨𝒔⟩` is the same, the clock and sequencer are the
+same object, and the drift ladder is the same table. In the Lean development
+this is not an analogy but the same theorem: the node width is a parameter
+there, so `k_ordered` and the rest are proved once and instantiated at 32 bits
+for `G` and 58 for `X`. The 26 extra bits of `⟨𝒍⟩`
+are not part of any ordering claim; they move the birthday bound of §5 from
+≈ 6.5·10⁴ allocators to ≈ 5.4·10⁸, which is a statement about *uniqueness*, the
+thing this note does not prove.
+
+> The payload identity and the splice are verified differentially against the
+> implementation by [`TestPropositionX`](../extended_test.go), for every rung
+> of the ladder over 160 000 random `(𝒍, 𝒕, 𝒔)` triples, against a `big.Int`
+> model written from the schema rather than from the code; order transparency
+> is checked directly by `TestOrderTransparency`, which compares `Before`,
+> `After` and `bytes.Compare` against the ordering of the modelled payload.
+> That the result is a UUID every other system accepts is checked by
+> `TestRFC9562` on the reserved fields and the canonical string.
 
 ### 1.3 Proposition 2 (local layout)
 
@@ -110,7 +270,7 @@ an addition and the claimed positional form follows. Widths check out:
   ⟦makeL(𝑫, 𝒕, 𝒔)⟧ = 𝒅·2⁶¹ + 𝒙·2¹⁴ + 𝒔
 ```
 
-*Proof.* Immediate from [`makeL`](../local.go#L59): `d = (𝑫−18) ≪ 61`,
+*Proof.* Immediate from [`makeL`](../local.go#L67): `d = 𝒅 ≪ 61`,
 `x = 𝒕 ≫ 17 ≪ 14 = 𝒙·2¹⁴`, `seq = 𝒔 < 2¹⁴`; the three ranges are disjoint and
 contiguous, `3 + 47 + 14 = 64`. ∎
 
@@ -121,9 +281,9 @@ around a node field, because there is no node field.
 
 `Before(a, b) ⟺ ⟦a⟧ < ⟦b⟧`.
 
-*Proof.* For `L`, [`Before`](../local.go#L75) is `uint64` comparison and `⟦·⟧` is
+*Proof.* For `L`, [`Before`](../local.go#L83) is `uint64` comparison and `⟦·⟧` is
 the identity, so the claim is trivial. For `G`,
-[`Before`](../global.go#L95) is `a.hi < b.hi ∨ (a.hi = b.hi ∧ a.lo < b.lo)`, which
+[`Before`](../global.go#L110) is `a.hi < b.hi ∨ (a.hi = b.hi ∧ a.lo < b.lo)`, which
 is exactly the lexicographic comparison of the base-2⁶⁴ representation
 `⟦·⟧ = hi·2⁶⁴ + lo` of a non-negative integer. ∎
 
@@ -164,11 +324,12 @@ note came from that choice, and v3 discharges all three by construction:
   one. `L.Before` takes an `L` and `G.Before` takes a `G`, so the comparison no
   longer type-checks; §5 records what replaced the warning.
 * **Discrimination.** `Hi = 0` doubled as "this is a local value", which is a
-  property of the *value*, not of the type. A global value with `𝑫 = 18` and
-  `𝑬 = 0` also has `hi = 0`; §7 had to argue that `driftInBits` never returns
-  18 to rule it out. The types carry the distinction now, so the argument is
-  no longer load-bearing — and `𝑫 = 18` was re-enabled once it was not, which
-  is where the `Δ = 34.4 s` rung of §1.1 comes from.
+  property of the *value*, not of the type. A global value with the lowest
+  drift and `𝑬 = 0` also has `hi = 0`; §7 had to argue that the ladder never
+  reached that rung to rule it out. The types carry the distinction now, so the
+  argument is no longer load-bearing — the bottom of the ladder was re-enabled
+  once it was not, and then, with the shift arithmetic replaced by positional
+  placement (§1.2), extended down to the millisecond rungs of §1.1.
 
 ---
 
@@ -545,6 +706,12 @@ Hence, using `𝑬(𝒖) + 1 ≤ 𝑬(𝒗)`,
       <  𝒅·2⁹³ + (𝑬(𝒖)+1)·2^(46+𝑫)  ≤  𝒅·2⁹³ + 𝑬(𝒗)·2^(46+𝑫)  ≤  ⟦𝒗⟧ . ∎
 ```
 
+For `X` the same computation runs over the payload with `2³²` replaced by
+`2⁵⁸` and `2⁹³`, `2^(46+𝑫)` by `2¹¹⁹`, `2^(72+𝑫)`: the residue is again exactly
+one below the weight of the epoch, because the widths below `⟨𝑬⟩` sum to it by
+construction. `Guid.pack_lt_of_epoch_lt` is this lemma machine-checked, and it
+is stated over a node of `𝑵` bits, so it is one theorem for both types.
+
 This is *the* structural fact of the schema: the node identity outranks the low
 `𝑫` bits of the clock, but nothing outranks the epoch. Clock disagreement can
 permute values only *inside* an epoch.
@@ -680,19 +847,28 @@ construction above predicts.
 If the cluster allocates at a peak aggregate rate of `ρ` identifiers per
 second, then `𝒌 = ⌈ρ·𝑾⌉ = ⌈ρ·(Δ + 2ε)⌉`. With `ε = 1 s`:
 
-| `ρ` \ `𝑫` | 18 (`Δ`=34.4 s, floor) | 21 (`Δ`=274.9 s, default) | 25 (`Δ`=4398 s) |
-|---|---|---|---|
-| 10³ /s | 3.6·10⁴ | 2.8·10⁵ | 4.4·10⁶ |
-| 10⁵ /s | 3.6·10⁶ | 2.8·10⁷ | 4.4·10⁸ |
-| 10⁶ /s | 3.6·10⁷ | 2.8·10⁸ | 4.4·10⁹ |
+| `ρ` \ `𝑫` | 3 (`Δ`=1.05 ms, floor) | 17 (`Δ`=17.2 s) | 21 (`Δ`=274.9 s, default) | 25 (`Δ`=4398 s) |
+|---|---|---|---|---|
+| 10³ /s | 2.0·10³ | 1.9·10⁴ | 2.8·10⁵ | 4.4·10⁶ |
+| 10⁵ /s | 2.0·10⁵ | 1.9·10⁶ | 2.8·10⁷ | 4.4·10⁸ |
+| 10⁶ /s | 2.0·10⁶ | 1.9·10⁷ | 2.8·10⁸ | 4.4·10⁹ |
 
 `𝒌` is an index-space quantity and therefore grows with throughput; the
 time-space statement of Lemma 7 — *two values allocated more than `Δ + 2ε`
 apart are always correctly ordered* — is invariant and is the one to reason
 with. Choosing `𝑫` is exactly the trade: a larger `Δ` tolerates more clock
 skew, a smaller `Δ` yields a tighter `𝒌`. The floor of the ladder bounds how
-tight `𝒌` can be made: `𝑫 = 18` is the smallest the 96-bit layout admits, so
-`𝑾 ≥ 34.4 s + 2ε` whatever the deployment's clocks are worth.
+tight `𝒌` can be made: `𝑫 = 3` is its lowest rung, so `𝑾 ≥ 1.05 ms + 2ε`
+whatever the deployment's clocks are worth.
+
+The lower rungs shift where the window comes from. At `𝑫 = 3` with `ε = 1 s`
+the schema contributes 1.05 ms of a 2.001 s window — `𝑾` is `2ε` to within
+0.06 %, so `𝒌` is decided by the quality of the deployment's clocks and not by
+the drift setting at all. Selecting such a rung is therefore a statement about
+`ε`: it pays off in a datacenter where `ε` is a millisecond (`𝑾 ≈ 3 ms`) and
+buys nothing where `ε` is a second. This is a change in what a user has to
+reason about, not in the theorem — §4.8 shows `𝑾 = Δ + 2ε` is tight either
+way.
 
 ---
 
@@ -707,12 +883,21 @@ tight `𝒌` can be made: `𝑫 = 18` is the smallest the 96-bit layout admits, 
   processes that draw the same random `𝒍` and allocate in the same epoch with
   the same `𝒙ₗ` and `𝒔` collide. With 32-bit random `𝒍`, the birthday bound
   gives ≈ 65 000 allocators for a collision probability near ½ — the figure
-  quoted in the README.
-* Mixed comparison of local and global values is not addressed, and since v3
-  cannot be written: `L` and `G` are distinct types and neither `Before`
-  accepts the other. Convert with `L.ToG` / `G.ToL` first. The conversion
-  preserves `⟨𝒕,𝒔⟩` exactly (Propositions 1 and 2 agree on those fields), so a
-  set converted to one type compares under the theorems of §3 and §4.
+  quoted in the README. `X` widens `𝒍` to 58 bits and moves that bound to
+  ≈ 5.4·10⁸, which is the reason the type exists: ordering is proven here,
+  uniqueness is the assumption, and widening `𝒍` does more for it than anything
+  in this note. Two allocators sharing an `𝒍` still only collide if they also
+  agree on `⟨𝑬, 𝒙ₗ, 𝒔⟩`, so the true rate is far below the bare birthday figure
+  — but the bare figure is the one to quote, because two allocators that share
+  `𝒍` will eventually agree on `⟨𝒕,𝒔⟩` too.
+* Mixed comparison of values of different width is not addressed, and since v3
+  cannot be written: `L`, `G` and `X` are distinct types and no `Before`
+  accepts another. Convert first, by building the destination — `G.FromL`,
+  `G.FromX`, `L.FromG`, `L.FromX`, `X.FromG`, `X.FromL`. Every conversion
+  preserves `⟨𝒕,𝒔⟩` exactly — Propositions 1, 1′ and 2 agree on those fields —
+  so a set converted to one type compares under the theorems of §3 and §4.
+  `G.FromX` additionally truncates `𝒍` to 32 bits, which is a statement about
+  uniqueness, not about order.
 
 ---
 
@@ -725,7 +910,17 @@ Batteries; Lean 4 core `Nat` only). It contains:
 |---|---|
 | `Guid.digit_lt` | the key step of Lemma 2 |
 | `Guid.div_lt_div_of_add_le` | the division step of Lemma 7 |
-| `Guid.pack` | Proposition 1, the positional encoding |
+| `Guid.pack` | Propositions 1 and 1′, the positional encoding, over a node of `N` bits |
+| `Guid.ladder` | the drift ladder of §1.1, code `𝒅` ↦ `𝑫` |
+| `Guid.ladder_le` | every rung satisfies `𝑫 ≤ 25`, so `⟨𝑬⟩` keeps 22 bits |
+| `Guid.ladder_mono` | the ladder ascends, so `⟨𝒅⟩` orders values by window |
+| `Guid.pack_lt` | **the layout fits `64 + N` bits at every `𝑫 ≤ 47`** (§1.2, §1.2′) |
+| `Guid.pack_lt_96` | the same at `𝑵 = 32`: a `G` is 96 bits |
+| `Guid.pack_lt_122` | the same at `𝑵 = 58`: the payload of an `X` is 122 bits |
+| `Guid.Trace.D_le` | a rung of the ladder never exceeds the 47 bits of `⟨𝒙⟩` |
+| `Guid.Trace.A_lt` | every value of a trace is a `64 + N` bit number |
+| `Guid.Trace.A_lt_96` | the same at `𝑵 = 32`, for `G` |
+| `Guid.Trace.A_lt_122` | the same at `𝑵 = 58`, for the payload of `X` |
 | `Guid.pack_lt_of_epoch_lt` | Lemma 5 (epoch dominance) |
 | `Guid.pack_le_of_suffix_le` | the equal-prefix case behind Corollary 2 |
 | `Guid.Trace` | the system model of §4.1 with (A1), (A5), (A6) |
@@ -749,6 +944,16 @@ The model is deliberately *abstract in the clock and the allocation times*:
 skew and rate hypotheses, so the theorem holds for every execution of the
 system, not for a particular schedule.
 
+It is also abstract in **the width of the node field**. `Guid.pack` takes that
+width as a parameter `N` and `Trace` carries it, so nothing in Part I or Part
+II is stated about 32 bits in particular: `k_ordered`, `no_inversion`,
+`displacement` and the rest hold at `𝑵 = 32` for `guid.G` and at `𝑵 = 58` for
+`guid.X` by the same proof term. Only the width bounds name a number, and both
+numbers are checked — `pack_lt_96` and `pack_lt_122`. This is the whole of what
+`X` needed from the formalization; the RFC 9562 splice lives outside it,
+because it is a permutation of bit positions and a pair of constants, which
+§1.2′ shows changes no order.
+
 Check it with:
 
 ```bash
@@ -764,6 +969,10 @@ errors and no warnings; its `#print axioms` directives report
 'Guid.Trace.k_ordered'            depends on axioms: [propext, Quot.sound]
 'Guid.Trace.inversion_window'     depends on axioms: [propext, Quot.sound]
 'Guid.Trace.displacement'         depends on axioms: [propext, Quot.sound]
+'Guid.Trace.A_lt_96'              depends on axioms: [propext, Quot.sound]
+'Guid.pack_lt_96'                 depends on axioms: [propext, Quot.sound]
+'Guid.ladder_le'                  does not depend on any axioms
+'Guid.ladder_mono'                does not depend on any axioms
 'Guid.pack_lt_of_epoch_lt'        depends on axioms: [propext, Quot.sound]
 'Guid.pack_le_of_suffix_le'       depends on axioms: [propext]
 'Guid.sane'                       depends on axioms: [propext, Quot.sound]
@@ -793,11 +1002,11 @@ settings are ordered by their drift, not their time.
 v2 accepted the drift as an optional argument of every allocator, which put a
 quantity that must be constant across a keyspace — and across the lifetime of
 the data — at the call site, where it varies most easily. v3 binds it to the
-clock instead: `WithDrift` configures it, [`Chronos.Drift`](../clock.go#L38)
+clock instead: `WithDrift` configures it, [`Chronos.Drift`](../clock.go#L56)
 reports it, and `NewG` / `NewL` read it from there. One clock is therefore one
 drift by construction, and (A1) reduces to a statement about clocks:
-`guid.NewClock(guid.WithDrift(60*time.Second))` and
-`guid.NewClock(guid.WithDrift(10*time.Minute))` must not feed one keyspace.
+`guid.NewClock(guid.WithDrift(guid.Drift17s))` and
+`guid.NewClock(guid.WithDrift(guid.Drift1099s))` must not feed one keyspace.
 The library cannot enforce that across processes, so (A1) remains an
 assumption — but it is no longer one an allocation can violate on its own.
 

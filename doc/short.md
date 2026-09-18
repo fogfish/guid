@@ -2,8 +2,8 @@
 
 A plain-language summary of the ordering properties this library provides. The
 formal statements, with proofs, are in [proof.md](proof.md); statement (2) is
-machine-checked in [proof.lean](proof.lean). This note is the version you read
-first.
+machine-checked in [proof.lean](proof.lean), at both of the widths the library
+offers a node id at. This note is the version you read first.
 
 ## The problem
 
@@ -29,6 +29,16 @@ comparing two numbers, so **the field order is the sort order**:
     3    |  47−D bits  |  32 bits |  D bits  |  14  |
 ```
 
+The library ships this layout at three widths. They differ only in how much
+room is left for the node id — none, 32 bits, or 58 — and everything below is
+true of all three.
+
+| | size | node id | |
+|---|---|---|---|
+| `guid.L` | 8 B | — | unique within one allocator |
+| `guid.G` | 12 B | 32 bit | ≈ 65 000 allocators before collisions matter |
+| `guid.X` | 16 B | 58 bit | ≈ 5.4·10⁸, and it **is** an RFC 9562 UUID (v8) |
+
 The one unusual move: **the node id sits in the middle of the timestamp.**
 Coarse time is above it, fine time below it. That single choice produces
 everything else:
@@ -51,19 +61,26 @@ grouping survives only within one millisecond. UUIDv7 cannot either — it has n
 location field at all. This is a difference in what the layout can express, not
 a difference in tuning.
 
-The bucket width is `Δ`, configured with [`WithDrift`](../clock.go#L115).
-Default 274.9 s, adjustable from 34.4 s to 73 min.
+The bucket width is `Δ`, configured with [`WithDrift`](../clock.go#L153) from
+a ladder of eight rungs, `guid.Drift1ms` … `guid.Drift4398s`. Default
+`guid.Drift275s` — 274.9 s — and the ladder runs from 1.05 ms to 73 min.
+`guid.DriftOf(d)` picks the smallest rung that covers a tolerance `d`.
 
 **Read `Δ` as a failover budget, not a clock-skew budget.** It has to cover the
 interval between a silent failure and the moment the cluster has converged on a
 new owner, because that is exactly the interval during which two allocators
 write to the same range:
 
-| `Δ` | covers |
-|---|---|
-| 34 s – 137 s | gossip / phi-accrual detection, automated lease expiry |
-| 275 s *(default)* – 1099 s | slow membership convergence, cross-region hand-over |
-| 2199 s – 4398 s | human-in-the-loop failover |
+| rung | `Δ` | covers |
+|---|---|---|
+| `Drift1ms` – `Drift268ms` | 1.05 ms – 268 ms | synchronized clocks; the ordering class of Snowflake and UUIDv7 |
+| `Drift2s` – `Drift17s` | 2.15 s – 17.2 s | consumer devices, lease expiry, fast failure detectors |
+| `Drift275s` *(default)* – `Drift1099s` | 274.9 s – 1099 s | gossip / phi-accrual detection, slow cross-region hand-over |
+| `Drift4398s` | 4398 s | human-in-the-loop failover |
+
+Below a second the window `Δ + 2ε` is dominated by the clock skew `ε` rather
+than by `Δ`, so the low rungs pay off only where the clocks are genuinely
+disciplined.
 
 It is *also* the clock disagreement the ordering tolerates, which is why one
 knob serves both. And that range is not over-generous: the target is not a
@@ -73,10 +90,10 @@ phones returning from airplane mode. Tens of seconds of disagreement is the
 distribution there, not a pathology.
 
 > If ⟨l⟩ is meant to carry topology, **assign it rather than randomize it**.
-> The default [`WithNodeRandom`](../clock.go#L141) gives distinct allocators,
+> The default [`WithNodeRandom`](../clock.go#L197) gives distinct allocators,
 > but random identities sort arbitrarily, so adjacent ring positions land far
 > apart. Derive ⟨l⟩ from ring position with
-> [`WithNodeID`](../clock.go#L122) when sort order should follow the topology.
+> [`WithNodeID`](../clock.go#L164) when sort order should follow the topology.
 
 ## The three results
 
@@ -105,7 +122,7 @@ You cannot break this by allocating too fast.
 > The fix was to make the timestamp and counter one number, see
 > [sequence.go](../sequence.go).
 
-### 2. Global identifiers (`guid.G`, 12 bytes) are k-ordered
+### 2. Global identifiers (`guid.G` 12 bytes, `guid.X` 16 bytes) are k-ordered
 
 The guarantee has a shape worth stating precisely:
 
@@ -164,13 +181,17 @@ seconds"), never the entry form.
 
 In rough order of how likely you are to hit it.
 
-**Node id collisions — the real limit on cluster size.** Node ids are 32 random
-bits. By the birthday bound you get roughly **65,000 allocators** before
-collision probability approaches ½. Two allocators sharing a node id, in the
-same bucket, at the same fine time, with the same counter value, produce *the
-same identifier*. Uniqueness is assumed, not proven. If you need more
-allocators than that, assign node ids explicitly with
-[`WithNodeID`](../clock.go#L122) instead of randomly.
+**Node id collisions — the real limit on cluster size.** In a `guid.G`, node
+ids are 32 random bits. By the birthday bound you get roughly **65,000
+allocators** before collision probability approaches ½. Two allocators sharing
+a node id, in the same bucket, at the same fine time, with the same counter
+value, produce *the same identifier*. Uniqueness is assumed, not proven — it is
+the one thing here that is not.
+
+If you need more allocators than that, either assign node ids explicitly with
+[`WithNodeID`](../clock.go#L164) instead of randomly, or use `guid.X`, whose 58
+random bits move the bound to about **5.4·10⁸** allocators. That is the reason
+the wider type exists; being a UUID is the other one.
 
 **Mixed drift settings — silent and nasty.** The drift code is the *top* field.
 Identifiers made with different drift settings sort by their configuration

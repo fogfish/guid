@@ -63,12 +63,27 @@ func ZeroG(clock Chronos) G {
 	return makeG(0, clock.Drift(), 0, 0)
 }
 
-func makeG(n, drift, t, seq uint64) G {
-	thi, tlo := splitT(t, drift)
-	nhi, nlo := splitNode(n, drift)
+// makeG packs the five fractions into the 96-bit value, positionally:
+//
+//	⟦makeG⟧ = 𝒅·2⁹³ + 𝑬·2^(46+𝑫) + 𝒍·2^(14+𝑫) + 𝒙ₗ·2¹⁴ + 𝒔
+//
+// which is Proposition 1 of doc/proof.md written out. Each fraction is placed
+// at the bit position the schema gives it and the results are OR-ed; the
+// ranges are disjoint by the width identity 3 + (47−𝑫) + 32 + 𝑫 + 14 = 96, so
+// the OR is an addition and the positional form is the definition rather than
+// a consequence of shift arithmetic. Every rung of the ladder is therefore
+// reachable, including those where ⟨𝑬⟩ spills across the hi/lo boundary of the
+// two machine words the value is assembled from.
+func makeG(n uint64, drift Drift, t, seq uint64) G {
+	d := drift.Bits()
+	x := t >> bitsSeqDrift
 
-	// Note: with drift = 30 sec, nhi = 0
-	return joinG(thi|nhi, nlo|tlo|seq)
+	dhi, dlo := place(uint64(drift)&maskDrift, posDrift)
+	ehi, elo := place(x>>d, bitsSeq+d+bitsNode)
+	nhi, nlo := place(n&maskNode, bitsSeq+d)
+	xhi, xlo := place(x&(1<<d-1), bitsSeq)
+
+	return joinG(dhi|ehi|nhi|xhi, dlo|elo|nlo|xlo|seq&maskSeq)
 }
 
 // words decomposes the value into the pair (hi, lo) so that the value equals
@@ -84,9 +99,9 @@ func joinG(hi, lo uint64) (uid G) {
 	return
 }
 
-// drift returns the ⟨𝒅⟩ fraction as the number of bits of ⟨𝒕⟩ that rank below
-// ⟨𝒍⟩. The code occupies the 3 most significant bits of the value.
-func (uid G) drift() uint64 { return uint64(uid[0]>>5) + driftZ }
+// Drift returns the ⟨𝒅⟩ fraction, the rung of the ladder the value was
+// allocated with. The code occupies the 3 most significant bits of the value.
+func (uid G) Drift() Drift { return Drift(uid[0] >> (8 - bitsDrift)) }
 
 // Equal compares k-ordered values, returns true if values are equal
 func (uid G) Equal(b G) bool { return uid == b }
@@ -105,42 +120,30 @@ func (uid G) After(b G) bool {
 	return ahi > bhi || (ahi == bhi && alo > blo)
 }
 
-// Time returns ⟨𝒕⟩ timestamp fraction from identifier in nano seconds
+// Time returns ⟨𝒕⟩ timestamp fraction from identifier in nano seconds.
+//
+// ⟨𝒕⟩ is split around ⟨𝒍⟩: the epoch ⟨𝑬⟩ = ⌊𝒙/2^𝑫⌋ ranks above the location
+// and the low bits ⟨𝒙ₗ⟩ = 𝒙 mod 2^𝑫 below it, see makeG.
+//
+//	  3      47 − 𝑫        32          𝑫       14
+//	|---|--------------|------------|-------|--------|
+//	 ⟨𝒅⟩      ⟨𝑬⟩           ⟨𝒍⟩       ⟨𝒙ₗ⟩      ⟨𝒔⟩
 func (uid G) Time() uint64 {
-	//
-	//   3    47 - drift             32bit      drift   14
-	//  |-|-------------------|--------!-------|-----|-------|
-	//  ^                         b    ^   a                 ^
-	// 96                             64                     0
-	//
-	xhi, xlo := uid.words()
-	d := uid.drift()
-	a := 64 - bitsSeq - d
-	b := 32 - a
+	hi, lo := uid.words()
+	d := uid.Drift().Bits()
 
-	hi := (xhi >> b) << d
-	lo := (xlo << a) >> (64 - d)
+	e := extract(hi, lo, bitsSeq+d+bitsNode, bitsTime-d)
+	x := extract(hi, lo, bitsSeq, d)
 
-	return (hi | lo) << bitsSeqDrift
+	return (e<<d | x) << bitsSeqDrift
 }
 
 // Node returns ⟨𝒍⟩ location fraction from identifier.
 func (uid G) Node() uint64 {
-	//
-	//   3    47 - drift             32bit      drift   14
-	//  |-|-------------------|--------!-------|-----|-------|
-	//  ^                         b    ^   a                 ^
-	// 96                             64                     0
-	//
-	xhi, xlo := uid.words()
-	d := uid.drift()
-	a := 64 - bitsSeq - d
-	b := 32 - a
+	hi, lo := uid.words()
+	d := uid.Drift().Bits()
 
-	hi := xhi << (64 - b) >> (64 - b - a)
-	lo := xlo >> (d + bitsSeq)
-
-	return hi | lo
+	return extract(hi, lo, bitsSeq+d, bitsNode)
 }
 
 // Seq returns ⟨𝒔⟩ sequence value. The value of monotonic unique integer
@@ -165,13 +168,7 @@ func (uid G) Epoch() time.Time {
 
 // Diff approximates distance between k-ordered values.
 func (uid G) Diff(b G) G {
-	return makeG(uid.Node(), uid.drift(), uid.Time()-b.Time(), uid.Seq()-b.Seq())
-}
-
-// ToL casts globally unique 96-bit value to locally unique 64-bit one by
-// dropping the ⟨𝒍⟩ fraction.
-func (uid G) ToL() L {
-	return makeL(uid.drift(), uid.Time(), uid.Seq())
+	return makeG(uid.Node(), uid.Drift(), uid.Time()-b.Time(), uid.Seq()-b.Seq())
 }
 
 // Bytes encodes k-ordered value to byte slice.
@@ -226,64 +223,87 @@ func (uid *G) UnmarshalJSON(b []byte) error {
 		return err
 	}
 
-	v, err := FromStringG(val)
+	return uid.FromString(val)
+}
+
+// MarshalText implements encoding.TextMarshaler, so that the value travels
+// through any codec that speaks it — yaml, toml, a struct tag, a map key.
+func (uid G) MarshalText() ([]byte, error) {
+	return []byte(uid.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler, see FromString.
+func (uid *G) UnmarshalText(b []byte) error {
+	return uid.FromString(string(b))
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler, see Bytes.
+func (uid G) MarshalBinary() ([]byte, error) {
+	return uid.Bytes(), nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler, see FromBytes.
+func (uid *G) UnmarshalBinary(b []byte) error {
+	return uid.FromBytes(b)
+}
+
+// Fold composes the value from a byte slice. It is the inverse of Split, the
+// value n being the number of bits each cell of the slice carries.
+func (uid *G) Fold(n uint64, bytes []byte) {
+	hi, lo := fold(SizeG*8, n, bytes)
+	*uid = joinG(hi, lo)
+}
+
+// FromBytes decodes the value from its wire format. It is the inverse of
+// Bytes.
+func (uid *G) FromBytes(val []byte) error {
+	if len(val) != SizeG {
+		return fmt.Errorf("malformed k-order number: %v", val)
+	}
+
+	copy(uid[:], val)
+	return nil
+}
+
+// FromString decodes the value from the lexicographically sortable string. It
+// is the inverse of String.
+func (uid *G) FromString(val string) error {
+	if len(val) != SizeString {
+		return fmt.Errorf("malformed k-order number: %v", val)
+	}
+
+	uid.Fold(6, decode64(val))
+	return nil
+}
+
+// FromBase62 decodes the value from the base62 string. It is the inverse of
+// Base62.
+func (uid *G) FromBase62(val string) error {
+	b, err := decode62([]byte(val))
 	if err != nil {
 		return err
 	}
 
-	*uid = v
+	// base62 is a positional numeral system, it does not carry leading zeros
+	if len(b) > SizeG {
+		return fmt.Errorf("malformed k-order number: %v", val)
+	}
+
+	*uid = G{}
+	copy(uid[SizeG-len(b):], b)
 	return nil
 }
 
-// FoldG composes k-ordered value from byte slice. The operation is inverse
-// to Split.
-func FoldG(n uint64, bytes []byte) G {
-	hi, lo := fold(SizeG*8, n, bytes)
-	return joinG(hi, lo)
-}
-
-// FromBytesG decodes k-ordered value from bytes
-func FromBytesG(val []byte) (G, error) {
-	if len(val) != SizeG {
-		return G{}, fmt.Errorf("malformed k-order number: %v", val)
-	}
-
-	var uid G
-	copy(uid[:], val)
-	return uid, nil
-}
-
-// FromStringG decodes k-ordered value from lexicographically sortable string
-func FromStringG(val string) (G, error) {
-	if len(val) != SizeString {
-		return G{}, fmt.Errorf("malformed k-order number: %v", val)
-	}
-
-	return FoldG(6, decode64(val)), nil
-}
-
-// FromBase62G decodes k-ordered value from base62 string
-func FromBase62G(val string) (G, error) {
-	b, err := decode62([]byte(val))
-	if err != nil {
-		return G{}, err
-	}
-
-	// base62 is a positional numeral system, it does not carry leading zeros
-	if len(b) > SizeG {
-		return G{}, fmt.Errorf("malformed k-order number: %v", val)
-	}
-
-	var uid G
-	copy(uid[SizeG-len(b):], b)
-	return uid, nil
-}
-
-// FromTG converts a wall clock instant to a globally unique 96-bit k-ordered
-// value.
+// FromTime sets the value to a wall clock instant.
 //
 // The instant is placed into the time domain of the clock, so that the value
 // sorts against values the clock allocates, see TimeOrder.
-func FromTG(clock Chronos, t time.Time) G {
-	return makeG(clock.Node(), clock.Drift(), tick(clock.Order(), t), 0)
+func (uid *G) FromTime(clock Chronos, t time.Time) {
+	*uid = makeG(clock.Node(), clock.Drift(), tick(clock.Order(), t), 0)
+}
+
+// FromL casts a locally unique 64-bit value to this globally unique 96-bit one
+// by stamping it with the ⟨𝒍⟩ fraction of the clock.
+func (uid *G) FromL(clock Chronos, val L) {
+	*uid = makeG(clock.Node(), val.Drift(), val.Time(), val.Seq())
 }
