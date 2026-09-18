@@ -146,7 +146,7 @@ Its limit is in the name: a local value is unique within the allocator that issu
 g := guid.NewG(guid.Clock)   // 96-bit, globally unique
 l := guid.NewL(guid.Clock)   // 64-bit, unique within this allocator
 
-g.Time()  g.Node()  g.Seq()  g.EpochT()
+g.Time()  g.Node()  g.Seq()  g.Epoch()
 g.Before(other)  g.After(other)  g.Equal(other)
 g.String()  g.Base62()  g.Bytes()
 
@@ -165,20 +165,22 @@ v3 is a compatibility break. The bit layout of the identifiers is unchanged — 
 | `guid.Z(clock)` | `guid.ZeroG(clock)` / `guid.ZeroL(clock)` |
 | `guid.Time(uid)`, `guid.Node(uid)`, `guid.Seq(uid)` | `uid.Time()`, `uid.Node()`, `uid.Seq()` |
 | `guid.Before(a, b)`, `guid.After`, `guid.Equal`, `guid.Diff` | `a.Before(b)`, `a.After(b)`, `a.Equal(b)`, `a.Diff(b)` |
-| `guid.EpochT(uid)`, `guid.EpochI(uid)` | `uid.EpochT()`, `uid.EpochI()` |
+| `guid.EpochT(uid)`, `guid.EpochI(uid)` | `uid.Epoch()` — one method, see below |
 | `guid.String(uid)`, `guid.Bytes(uid)`, `guid.Base62(uid)` | `uid.String()`, `uid.Bytes()`, `uid.Base62()` |
 | `guid.FromL(clock, uid)` / `guid.ToL(uid)` | `l.ToG(clock)` / `g.ToL()` |
 | `guid.FromBytes(b)` (dispatched on length) | `guid.FromBytesG(b)` / `guid.FromBytesL(b)` |
 | `guid.FromBase62(s)` | `guid.FromBase62G(s)` / `guid.FromBase62L(s)` |
 | `guid.FromT(t)` | `guid.FromTL(clock, t)` / `guid.FromTG(clock, t)` |
 | `Chronos.L()` | `Chronos.Node()` — renamed, `L` is now a type |
+| — | `Chronos.Order()` — new, the direction of the clock's time domain; `guid.FromTL`/`guid.FromTG` need it to place an instant into the keyspace |
 | `guid.G(clock, drift...)`, `guid.Z(drift...)`, `guid.FromT(t, drift...)` | drift moved onto the clock: `guid.NewClock(guid.WithDrift(d))`, `Chronos.Drift()` |
 | `guid.WithUnique(...)` | removed, see below |
 
-Three behavioural changes come with it:
+Four behavioural changes come with it:
 
 * **⟨𝒕⟩ and ⟨𝒔⟩ are always allocated as a pair.** `WithUnique` supplied ⟨𝒔⟩ from a generator independent of ⟨𝒕⟩, which opts out of the coupling that makes values sort in allocation order; it was deprecated in v2 and is gone in v3. `NewClockMock` still pins ⟨𝒕,𝒔⟩ to ⟨0,0⟩ for tests that need a fixed value.
 * **⟨𝒅⟩ drift is configured on the clock, not per allocation.** v2 accepted an optional `drift ...time.Duration` on every allocator, while correctness requires the drift to be constant across a keyspace — ⟨𝒅⟩ is the most significant faction, so mixing drifts sorts values by their configuration instead of their time. v3 binds it to `Chronos` with `guid.WithDrift(...)`, which makes the mixed keyspace unrepresentable within one clock. The ladder also gained its lowest rung back, 34.36 s; that is the floor the 96-bit layout admits, since ⟨𝒍⟩ needs `𝑫 - 18` bits above the word boundary.
+* **`Epoch` reports wall clock time, whichever way the clock runs.** v2 offered `EpochT` and `EpochI`, and the caller had to know which one matched the clock that allocated the value — picking wrong returned a date centuries off, silently. The direction of a clock is a decision about how the keyspace is laid out, not a fact about the event, so it must not change the reported instant. v3 has a single `uid.Epoch()`: it recovers the domain from ⟨𝒕⟩ itself, since a descending tick is `MaxUint64 - UnixNano` and therefore `>= 2^63` exactly while an ascending one is below it. The discrimination inverts on 2262-04-11, the day `int64` nanoseconds overflow, so it expires with the return type rather than before it. Ordering questions are answered by `Before`, `After` and `Time()` as before.
 * **JSON no longer carries a shape marker.** v2 prefixed a local value with `*` so that a `guid.K` could round-trip as either shape. The types are distinct now, so both marshal to a plain 16-character string. v2 JSON containing `*`-prefixed values does not decode.
 
 ## Getting started

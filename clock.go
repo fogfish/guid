@@ -24,6 +24,24 @@ import (
 	"time"
 )
 
+// TimeOrder is the direction of the time domain a clock allocates from, the
+// way its ⟨𝒕⟩ fraction moves as real time advances.
+//
+// The direction is a decision about keyspace layout, not a fact about the
+// events being identified: the same instant is the same instant whichever way
+// the index is laid out. Epoch therefore reports wall clock time regardless of
+// it, while the sort order of values follows it.
+type TimeOrder int
+
+const (
+	// ForwardTime domain, ⟨𝒕⟩ = UnixNano. Older values sort first.
+	ForwardTime TimeOrder = iota
+	// InverseTime domain, ⟨𝒕⟩ = MaxUint64 − UnixNano. Recent values sort
+	// first, e.g. so that a range scan returns the newest rows without a
+	// reverse.
+	InverseTime
+)
+
 // Chronos is an abstraction of logical clock used by library.
 type Chronos interface {
 	// Spatially unique identifier ⟨𝒍⟩ of ID allocator so called node location
@@ -36,6 +54,13 @@ type Chronos interface {
 	// and it must be the same for every value of a keyspace. It is a property
 	// of the clock so that a process cannot vary it per allocation.
 	Drift() uint64
+	// ⟨𝒐⟩ direction of the time domain.
+	//
+	// Like the drift it must be the same for every value of a keyspace, and it
+	// is a property of the clock so that a process cannot vary it per
+	// allocation. It is needed to place a wall clock instant into the domain,
+	// see FromTL and FromTG; reading ⟨𝒕⟩ back does not need it, see Epoch.
+	Order() TimeOrder
 }
 
 // Clock is global default instance of logical clock
@@ -54,11 +79,15 @@ type clock struct {
 	advance func(uint64) uint64
 	// ⟨𝒅⟩ drift in bits, see driftInBits
 	drift uint64
+	// ⟨𝒐⟩ direction of the time domain, fixed by the WithClock* option
+	order TimeOrder
 }
 
 func (clock clock) Node() uint64 { return clock.location }
 
 func (clock clock) Drift() uint64 { return clock.drift }
+
+func (clock clock) Order() TimeOrder { return clock.order }
 
 // T allocates the ⟨𝒕,𝒔⟩ fraction of a k-ordered value.
 //
@@ -91,6 +120,7 @@ func NewClockMock(opts ...Config) Chronos {
 		ticker:   func() uint64 { return 0 },
 		advance:  func(uint64) uint64 { return 0 },
 		drift:    driftInBits(driftDefault),
+		order:    ForwardTime,
 	}
 
 	for _, opt := range opts {
@@ -160,6 +190,10 @@ func WithNodeRandom() Config {
 // the direction in which allocated values sort. Use WithClockDescending for a
 // generator that runs backwards.
 //
+// The generator is assumed to yield unix nanoseconds. Epoch reads ⟨𝒕⟩ back on
+// that assumption; a generator in any other unit allocates ordered values but
+// does not report a meaningful wall clock time.
+//
 // Each clock built with WithClock owns a private ⟨𝒕,𝒔⟩ sequence, since the
 // library cannot know whether a custom generator shares a time domain with any
 // other clock. Values allocated from two such clocks are therefore unique only
@@ -169,6 +203,7 @@ func WithClock(ticker func() uint64) Config {
 		seq := &sequence{}
 		clock.ticker = ticker
 		clock.advance = seq.next
+		clock.order = ForwardTime
 	}
 }
 
@@ -180,6 +215,7 @@ func WithClockDescending(ticker func() uint64) Config {
 		seq := descending()
 		clock.ticker = ticker
 		clock.advance = seq.prev
+		clock.order = InverseTime
 	}
 }
 
@@ -188,6 +224,7 @@ func WithClockUnix() Config {
 	return func(clock *clock) {
 		clock.ticker = unixtime
 		clock.advance = seqAscending.next
+		clock.order = ForwardTime
 	}
 }
 
@@ -201,6 +238,7 @@ func WithClockInverse() Config {
 	return func(clock *clock) {
 		clock.ticker = inversetime
 		clock.advance = seqDescending.prev
+		clock.order = InverseTime
 	}
 }
 

@@ -438,70 +438,112 @@ func TestCodecL(t *testing.T) {
 	})
 }
 
+// the clock direction is a property of the keyspace, not of the event: both
+// domains are expected to round-trip the same instant through Epoch.
+var orders = []struct {
+	name  string
+	clock guid.Config
+}{
+	{"ascending", guid.WithClockUnix()},
+	{"descending", guid.WithClockInverse()},
+}
+
 func TestFromTL(t *testing.T) {
-	for _, drift := range drifts {
-		c := guid.NewClock(guid.WithDrift(drift), guid.WithClockUnix())
-		n := time.Now().Round(10 * time.Millisecond)
+	for _, order := range orders {
+		for _, drift := range drifts {
+			c := guid.NewClock(guid.WithDrift(drift), order.clock)
+			n := time.Now().Round(10 * time.Millisecond)
 
-		a := guid.FromTL(c, n)
-		b := a.ToG(c)
-		v := b.EpochT().Round(10 * time.Millisecond)
+			a := guid.FromTL(c, n)
+			b := a.ToG(c)
 
-		it.Then(t).Should(
-			it.Equal(v, n),
-		)
+			it.Then(t).Should(
+				it.Equal(a.Epoch().Round(10*time.Millisecond), n),
+				it.Equal(b.Epoch().Round(10*time.Millisecond), n),
+			)
+		}
 	}
 }
 
 func TestFromTG(t *testing.T) {
-	for _, drift := range drifts {
-		c := guid.NewClock(guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
-		n := time.Now().Round(10 * time.Millisecond)
+	for _, order := range orders {
+		for _, drift := range drifts {
+			c := guid.NewClock(guid.WithDrift(drift), guid.WithNodeID(0xffffffff), order.clock)
+			n := time.Now().Round(10 * time.Millisecond)
 
-		a := guid.FromTG(c, n)
-		v := a.EpochT().Round(10 * time.Millisecond)
+			a := guid.FromTG(c, n)
+			v := a.Epoch().Round(10 * time.Millisecond)
+
+			it.Then(t).Should(
+				it.Equal(v, n),
+				it.Equal(a.Node(), 0xffffffff),
+			)
+		}
+	}
+}
+
+// FromT places the instant into the domain of the clock, so a value built from
+// a timestamp sorts against values the same clock allocates.
+func TestFromTOrder(t *testing.T) {
+	for _, order := range orders {
+		c := guid.NewClock(order.clock)
+		past := guid.FromTL(c, time.Now().Add(-time.Hour))
+
+		a := guid.NewL(c)
+		g := guid.FromTG(c, time.Now().Add(-time.Hour))
+		b := guid.NewG(c)
+
+		if order.name == "ascending" {
+			it.Then(t).Should(
+				it.True(past.Before(a)),
+				it.True(g.Before(b)),
+			)
+		} else {
+			it.Then(t).Should(
+				it.True(past.After(a)),
+				it.True(g.After(b)),
+			)
+		}
+	}
+}
+
+// Epoch recovers the domain from ⟨𝒕⟩ itself, so one method serves both an
+// ascending and a descending clock without the caller naming the direction.
+func TestEpoch(t *testing.T) {
+	n := time.Now().Round(10 * time.Millisecond)
+
+	for _, c := range []guid.Chronos{
+		guid.NewClock(guid.WithClock(func() uint64 { return uint64(n.UnixNano()) })),
+		guid.NewClock(guid.WithClockDescending(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) })),
+	} {
+		a := guid.NewG(c)
+		b := guid.NewL(c)
 
 		it.Then(t).Should(
-			it.Equal(v, n),
-			it.Equal(a.Node(), 0xffffffff),
+			it.Equal(a.Epoch().Round(10*time.Millisecond), n),
+			it.Equal(b.Epoch().Round(10*time.Millisecond), n),
+			it.Equal(a.ToL().Epoch().Round(10*time.Millisecond), n),
 		)
 	}
 }
 
-func TestEpochT(t *testing.T) {
-	n := time.Now().Round(10 * time.Millisecond)
-	c := guid.NewClock(
-		guid.WithClock(func() uint64 { return uint64(n.UnixNano()) }),
-	)
+// the two domains are separated by the top bit of ⟨𝒕⟩, exactly until the day
+// int64 nanoseconds overflow. Guard the boundary the discrimination rests on.
+func TestEpochDomainBoundary(t *testing.T) {
+	for _, n := range []time.Time{
+		time.Unix(0, 1),
+		time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC),
+		time.Date(2262, 4, 11, 0, 0, 0, 0, time.UTC),
+	} {
+		asc := guid.NewClock(guid.WithClock(func() uint64 { return uint64(n.UnixNano()) }))
+		dsc := guid.NewClock(guid.WithClockDescending(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }))
 
-	a := guid.NewG(c)
-	v := a.EpochT().Round(10 * time.Millisecond)
-
-	b := guid.NewL(c)
-	w := b.EpochT().Round(10 * time.Millisecond)
-
-	it.Then(t).Should(
-		it.Equal(v, n),
-		it.Equal(w, n),
-	)
-}
-
-func TestEpochI(t *testing.T) {
-	n := time.Now().Round(10 * time.Millisecond)
-	c := guid.NewClock(
-		guid.WithClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }),
-	)
-
-	a := guid.NewG(c)
-	v := a.EpochI().Round(10 * time.Millisecond)
-
-	b := guid.NewL(c)
-	w := b.EpochI().Round(10 * time.Millisecond)
-
-	it.Then(t).Should(
-		it.Equal(v, n),
-		it.Equal(w, n),
-	)
+		// time.Unix reports in the local zone, normalise before comparing
+		it.Then(t).Should(
+			it.Equal(guid.NewL(asc).Epoch().UTC().Round(time.Second), n.UTC().Round(time.Second)),
+			it.Equal(guid.NewL(dsc).Epoch().UTC().Round(time.Second), n.UTC().Round(time.Second)),
+		)
+	}
 }
 
 func TestLexSorting(t *testing.T) {

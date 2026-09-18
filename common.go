@@ -69,6 +69,39 @@ func driftInBits(drift time.Duration) uint64 {
 	}
 }
 
+// epoch maps a ⟨𝒕⟩ fraction back to the wall clock instant it was allocated at.
+//
+// The domain the value belongs to is recovered from ⟨𝒕⟩ itself, no clock is
+// needed. A descending tick is MaxUint64 − UnixNano, which is ≥ 2⁶³ exactly
+// while UnixNano ≤ 2⁶³; an ascending tick is < 2⁶³ under the same condition.
+// The test therefore separates the two domains exactly, and it is decided by
+// the same bit that decides the sign of the int64 nanosecond count below. The
+// discrimination inverts on 2262-04-11, the day int64 nanoseconds overflow, so
+// it expires with the return type rather than before it.
+//
+// ⟨𝒕⟩ carries no ⟨𝒔⟩ of its own and is truncated by bitsSeqDrift bits, so the
+// instant is accurate to one tick, 2¹⁷ ns ≈ 131 µs. Truncation floors the tick,
+// which rounds an ascending instant down and a descending one up.
+func epoch(t uint64) time.Time {
+	if t >= 1<<63 {
+		return time.Unix(0, int64(^uint64(0)-t))
+	}
+
+	return time.Unix(0, int64(t))
+}
+
+// tick maps a wall clock instant into the ⟨𝒕⟩ domain of a clock.
+//
+// It is the inverse of epoch. Unlike epoch it needs the direction: a time.Time
+// carries no domain, so the clock that owns the keyspace has to supply it.
+func tick(order TimeOrder, t time.Time) uint64 {
+	if order == InverseTime {
+		return ^uint64(0) - uint64(t.UnixNano())
+	}
+
+	return uint64(t.UnixNano())
+}
+
 // splits ⟨𝒕⟩ faction (timestamp) to hi and lo bits of K order value
 func splitT(t uint64, drift uint64) (uint64, uint64) {
 	//

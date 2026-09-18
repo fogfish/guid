@@ -86,14 +86,18 @@ func (uid L) Time() uint64 {
 // at the time of k-ordered value creation.
 func (uid L) Seq() uint64 { return uint64(uid) & maskSeq }
 
-// EpochT converts ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-func (uid L) EpochT() time.Time {
-	return time.Unix(0, int64(uid.Time()))
-}
-
-// EpochI (inverse) converts ⟨𝒕⟩ timestamp fraction from identifier as unix timestamp
-func (uid L) EpochI() time.Time {
-	return time.Unix(0, int64(0xffffffffffffffff-uid.Time()))
+// Epoch returns the wall clock instant the value was allocated at.
+//
+// The instant is a fact about the allocation, not about the layout of the
+// keyspace: a value allocated by a descending clock reports the same time as
+// one allocated by a forward clock at the same moment, see TimeOrder. Ordering
+// questions are answered by Before, After and Time instead.
+//
+// The instant is accurate to one tick, 2¹⁷ ns ≈ 131 µs, and is meaningful only
+// for a clock whose ⟨𝒕⟩ is unix nanoseconds, which is every clock but one built
+// on a custom generator in other units, see WithClock.
+func (uid L) Epoch() time.Time {
+	return epoch(uid.Time())
 }
 
 // Diff approximates distance between k-ordered values.
@@ -205,7 +209,10 @@ func FromBase62L(val string) (L, error) {
 	return L(binary.BigEndian.Uint64(buf[:])), nil
 }
 
-// FromTL converts unix timestamp to locally unique k-ordered value
+// FromTL converts a wall clock instant to a locally unique 64-bit k-ordered value.
+//
+// The instant is placed into the time domain of the clock, so that the value
+// sorts against values the clock allocates, see TimeOrder.
 func FromTL(clock Chronos, t time.Time) L {
-	return makeL(clock.Drift(), uint64(t.UnixNano()), 0)
+	return makeL(clock.Drift(), tick(clock.Order(), t), 0)
 }
