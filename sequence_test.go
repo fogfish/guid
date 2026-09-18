@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fogfish/guid/v2"
+	"github.com/fogfish/guid/v3"
 	"github.com/fogfish/it/v2"
 )
 
@@ -43,21 +43,21 @@ func TestSeqCarry(t *testing.T) {
 		guid.WithClock(func() uint64 { return 1 << 20 }),
 	)
 
-	seen := make(map[guid.K]bool, 3*cycle)
-	last := guid.L(c)
+	seen := make(map[guid.L]bool, 3*cycle)
+	last := guid.NewL(c)
 	seen[last] = true
 	inv, dup, carried := 0, 0, 0
 
 	for i := 0; i < 3*cycle; i++ {
-		uid := guid.L(c)
+		uid := guid.NewL(c)
 
-		if !guid.Before(last, uid) {
+		if !last.Before(uid) {
 			inv++
 		}
 		if seen[uid] {
 			dup++
 		}
-		if guid.Time(uid) != guid.Time(last) {
+		if uid.Time() != last.Time() {
 			carried++
 		}
 
@@ -70,7 +70,7 @@ func TestSeqCarry(t *testing.T) {
 		it.Equal(inv, 0),
 		it.Equal(dup, 0),
 		it.Equal(carried, 3),
-		it.Equal(guid.Time(last), 1<<20+3*(1<<17)),
+		it.Equal(last.Time(), 1<<20+3*(1<<17)),
 	)
 }
 
@@ -81,15 +81,15 @@ func TestSeqCarryG(t *testing.T) {
 		guid.WithClock(func() uint64 { return 1 << 20 }),
 	)
 
-	last := guid.G(c)
+	last := guid.NewG(c)
 	inv, drift := 0, 0
 	for i := 0; i < 2*cycle; i++ {
-		uid := guid.G(c)
+		uid := guid.NewG(c)
 
-		if !guid.Before(last, uid) {
+		if !last.Before(uid) {
 			inv++
 		}
-		if guid.Node(uid) != 0xffffffff {
+		if uid.Node() != 0xffffffff {
 			drift++
 		}
 		last = uid
@@ -111,7 +111,7 @@ func TestSeqBackwards(t *testing.T) {
 		guid.WithClock(func() uint64 { return atomic.LoadUint64(&now) }),
 	)
 
-	last := guid.L(c)
+	last := guid.NewL(c)
 	inv := 0
 	for i := 0; i < 1000; i++ {
 		// step the clock a minute backwards, then let it tick forward again
@@ -122,8 +122,8 @@ func TestSeqBackwards(t *testing.T) {
 			atomic.AddUint64(&now, 1<<17)
 		}
 
-		uid := guid.L(c)
-		if !guid.Before(last, uid) {
+		uid := guid.NewL(c)
+		if !last.Before(uid) {
 			inv++
 		}
 		last = uid
@@ -142,12 +142,12 @@ func TestSeqDescending(t *testing.T) {
 		guid.WithClockDescending(func() uint64 { return 1 << 40 }),
 	)
 
-	last := guid.L(c)
+	last := guid.NewL(c)
 	inv := 0
 	for i := 0; i < 2*cycle; i++ {
-		uid := guid.L(c)
+		uid := guid.NewL(c)
 
-		if !guid.After(last, uid) {
+		if !last.After(uid) {
 			inv++
 		}
 		last = uid
@@ -162,11 +162,11 @@ func TestSeqDescending(t *testing.T) {
 func TestSeqInverse(t *testing.T) {
 	c := guid.NewClock(guid.WithClockInverse())
 
-	last := guid.L(c)
+	last := guid.NewL(c)
 	inv := 0
 	for i := 0; i < 100000; i++ {
-		uid := guid.L(c)
-		if !guid.After(last, uid) {
+		uid := guid.NewL(c)
+		if !last.After(uid) {
 			inv++
 		}
 		last = uid
@@ -185,7 +185,7 @@ func TestSeqConcurrent(t *testing.T) {
 	var (
 		wg  sync.WaitGroup
 		mu  sync.Mutex
-		all = make(map[guid.K]bool, n*m)
+		all = make(map[guid.L]bool, n*m)
 		dup int
 		inv int
 	)
@@ -195,16 +195,16 @@ func TestSeqConcurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			seq := make([]guid.K, 0, m)
+			seq := make([]guid.L, 0, m)
 			for j := 0; j < m; j++ {
-				seq = append(seq, guid.L(guid.Clock))
+				seq = append(seq, guid.NewL(guid.Clock))
 			}
 
 			mu.Lock()
 			defer mu.Unlock()
 
 			for j := 1; j < len(seq); j++ {
-				if !guid.Before(seq[j-1], seq[j]) {
+				if !seq[j-1].Before(seq[j]) {
 					inv++
 				}
 			}
@@ -232,15 +232,15 @@ func TestSeqShared(t *testing.T) {
 	b := guid.NewClock(guid.WithClockUnix())
 
 	it.Then(t).ShouldNot(
-		it.Equal(guid.L(a), guid.L(b)),
-		it.Equal(guid.L(b), guid.L(a)),
+		it.Equal(guid.NewL(a), guid.NewL(b)),
+		it.Equal(guid.NewL(b), guid.NewL(a)),
 	)
 }
 
 func BenchmarkL(b *testing.B) {
 	b.RunParallel(func(p *testing.PB) {
 		for p.Next() {
-			_ = guid.L(guid.Clock)
+			_ = guid.NewL(guid.Clock)
 		}
 	})
 }
@@ -248,7 +248,7 @@ func BenchmarkL(b *testing.B) {
 func BenchmarkG(b *testing.B) {
 	b.RunParallel(func(p *testing.PB) {
 		for p.Next() {
-			_ = guid.G(guid.Clock)
+			_ = guid.NewG(guid.Clock)
 		}
 	})
 }

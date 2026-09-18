@@ -2,11 +2,13 @@
 
 This note proves two properties of the identifiers produced by this library.
 
-> **(1)** Locally allocated values (`guid.L`, 64-bit) are **linearizable**: the
+> **(1)** Locally allocated values (`guid.L`, 64-bit, allocated by `NewL`) are
+> **linearizable**: the
 > order they induce is a valid sequential history of a strictly increasing
 > generator — unconditionally, at any allocation rate and under any clock.
 >
-> **(2)** Globally allocated values (`guid.G`, 96-bit) are **k-ordered**:
+> **(2)** Globally allocated values (`guid.G`, 96-bit, allocated by `NewG`) are
+> **k-ordered**:
 >
 > ```
 >   𝑨[𝒊 − 𝒌] ≤ 𝑨[𝒊] ≤ 𝑨[𝒊 + 𝒌]   for all 𝒊 such that 𝒌 < 𝒊 ≤ 𝒏 − 𝒌
@@ -17,12 +19,17 @@ This note proves two properties of the identifiers produced by this library.
 > during one drift window `𝑾 = Δ + 2ε`.
 
 Statement (2) is additionally machine-checked in Lean 4 — see
-[prove.lean](prove.lean) and §6.
+[proof.lean](proof.lean) and §6.
 
 The proofs are stated against the actual bit layout produced by
-[`makeG`](guid.go#L96) / [`makeL`](guid.go#L118) and the comparison operator
-[`Before`](guid.go#L134). §1 establishes that layout; everything after that is
-arithmetic on a positional numeral system.
+[`makeG`](../global.go#L66) / [`makeL`](../local.go#L59) and the comparison operators
+[`G.Before`](../global.go#L95) / [`L.Before`](../local.go#L75). §1 establishes that
+layout; everything after that is arithmetic on a positional numeral system.
+
+The layout is unchanged from v2. What v3 changed is the *storage* of it: `G` is
+the 96-bit number in big-endian bytes and `L` is the 64-bit number itself, two
+distinct types rather than one 128-bit struct carrying either. §1.6 records
+what that buys the proofs.
 
 ---
 
@@ -41,14 +48,21 @@ arithmetic on a positional numeral system.
 | `𝒍`   | node (allocator) identity | 32 bit |
 | `𝒔`   | per-process sequence, `𝒔 = 𝒏 mod 2¹⁴` for the `𝒏`-th call | 14 bit |
 | `Δ`   | **drift window** `Δ = 2^(17+𝑫)` nanoseconds | — |
-| `⟦𝒖⟧` | numeric value of `K` as a 96-bit integer, `⟦𝒖⟧ = 𝒖.Hi·2⁶⁴ + 𝒖.Lo` | — |
+| `⟦𝒖⟧` | numeric value of a k-ordered value as an integer; for `G` the 96-bit big-endian number its bytes hold, for `L` the 64-bit number itself | — |
+| `𝒖.hi`, `𝒖.lo` | the words of a `G`, `⟦𝒖⟧ = 𝒖.hi·2⁶⁴ + 𝒖.lo`, see [`G.words`](../global.go#L76) | 32, 64 bit |
 
-`Δ` is the quantity the user configures. `driftInBits` maps a requested
-tolerance to the smallest `𝑫` whose window covers it:
+`Δ` is the quantity the user configures, on the clock and not per allocation,
+with `WithDrift`. [`driftInBits`](../common.go#L51) maps a requested tolerance
+to the smallest `𝑫` whose window covers it:
 
-| `𝑫` | 19 | 20 | 21 *(default)* | 22 | 23 | 24 | 25 |
-|---|---|---|---|---|---|---|---|
-| `Δ` | 68.7 s | 137.4 s | **274.9 s** | 549.8 s | 1099.5 s | 2199.0 s | 4398.0 s |
+| `𝑫` | 18 | 19 | 20 | 21 *(default)* | 22 | 23 | 24 | 25 |
+|---|---|---|---|---|---|---|---|---|
+| `Δ` | 34.4 s | 68.7 s | 137.4 s | **274.9 s** | 549.8 s | 1099.5 s | 2199.0 s | 4398.0 s |
+
+`𝑫 = 18` is the floor, and it is geometry rather than policy: `𝒃 = 𝑫 − 18` is
+the number of `⟨𝒍⟩` bits that fall above the `hi`/`lo` boundary, so a smaller
+`𝑫` would spill `⟨𝑬⟩` across the word boundary — a layout neither `splitT` nor
+`splitNode` expresses. The ladder is 3 bits wide, so 8 rungs exhaust it.
 
 ### 1.2 Proposition 1 (global layout)
 
@@ -67,23 +81,24 @@ i.e. the 96-bit word is the concatenation
 ```
 
 *Proof.* Write `𝒂 = 64 − 14 − 𝑫` and `𝒃 = 32 − 𝒂 = 𝑫 − 18`, as in
-[`splitT`](common.go#L59) / [`splitNode`](common.go#L81).
+[`splitT`](../common.go#L73) / [`splitNode`](../common.go#L95).
 
 * `splitT` computes `lo = (𝒙 ≪ (𝒂+14)) ≫ 𝒂`. Since `𝒂 + 14 = 64 − 𝑫`, only the
   low `𝑫` bits of `𝒙` survive the left shift inside a 64-bit register, and the
   subsequent right shift by `𝒂` places them at positions `14 … 13+𝑫` of `Lo`.
   Hence `lo_t = 𝒙ₗ·2¹⁴`.
-* `splitT` computes `hi = (𝒙 ≫ 𝑫) ≪ 𝒃 = 𝑬·2^𝒃`, occupying bits `𝒃 … 28` of `Hi`
+* `splitT` computes `hi = (𝒙 ≫ 𝑫) ≪ 𝒃 = 𝑬·2^𝒃`, occupying bits `𝒃 … 28` of `hi`
   (`𝑬` has `47 − 𝑫` bits), and `dd = (𝑫−18) ≪ 29 = 𝒅·2²⁹`.
 * `splitNode` computes `lo = 𝒍 ≪ (𝑫+14)`, of which the low `𝒂 = 50 − 𝑫` bits of
-  `𝒍` survive in `Lo` at positions `𝑫+14 … 63`, and `hi = 𝒍 ≫ (32−𝒃)`, the top
-  `𝒃` bits of `𝒍` at positions `0 … 𝒃−1` of `Hi`.
+  `𝒍` survive in `lo` at positions `𝑫+14 … 63`, and `hi = 𝒍 ≫ (32−𝒃)`, the top
+  `𝒃` bits of `𝒍` at positions `0 … 𝒃−1` of `hi`.
 
-`makeG` ORs these into `Hi = hi_t | hi_l`, `Lo = lo_l | lo_t | 𝒔`. The occupied
-ranges are pairwise disjoint and contiguous, and the node halves are adjacent
-across the `Hi`/`Lo` boundary (`𝒃` bits ending at `Hi` bit 0, `𝒂` bits starting
-at `Lo` bit 63), so the OR is an addition and the claimed positional form
-follows. Widths check out: `3 + (47−𝑫) + 32 + 𝑫 + 14 = 96`. ∎
+`makeG` ORs these into `hi = hi_t | hi_l`, `lo = lo_l | lo_t | 𝒔`, then `joinG`
+writes the pair out big-endian. The occupied ranges are pairwise disjoint and
+contiguous, and the node halves are adjacent across the `hi`/`lo` boundary
+(`𝒃` bits ending at `hi` bit 0, `𝒂` bits starting at `lo` bit 63), so the OR is
+an addition and the claimed positional form follows. Widths check out:
+`3 + (47−𝑫) + 32 + 𝑫 + 14 = 96`. ∎
 
 > This proposition was also verified differentially against the implementation
 > for every `𝑫 ∈ {18,…,25}` over 160 000 random `(𝒍, 𝒕, 𝒔)` triples: the
@@ -92,10 +107,10 @@ follows. Widths check out: `3 + (47−𝑫) + 32 + 𝑫 + 14 = 96`. ∎
 ### 1.3 Proposition 2 (local layout)
 
 ```
-  ⟦makeL(𝑫, 𝒕, 𝒔)⟧ = 𝒅·2⁶¹ + 𝒙·2¹⁴ + 𝒔          (and Hi = 0)
+  ⟦makeL(𝑫, 𝒕, 𝒔)⟧ = 𝒅·2⁶¹ + 𝒙·2¹⁴ + 𝒔
 ```
 
-*Proof.* Immediate from [`makeL`](guid.go#L118): `d = (𝑫−18) ≪ 61`,
+*Proof.* Immediate from [`makeL`](../local.go#L59): `d = (𝑫−18) ≪ 61`,
 `x = 𝒕 ≫ 17 ≪ 14 = 𝒙·2¹⁴`, `seq = 𝒔 < 2¹⁴`; the three ranges are disjoint and
 contiguous, `3 + 47 + 14 = 64`. ∎
 
@@ -106,9 +121,17 @@ around a node field, because there is no node field.
 
 `Before(a, b) ⟺ ⟦a⟧ < ⟦b⟧`.
 
-*Proof.* [`Before`](guid.go#L134) is `a.Hi < b.Hi ∨ (a.Hi = b.Hi ∧ a.Lo < b.Lo)`,
-which is exactly the lexicographic comparison of the base-2⁶⁴ representation
-`⟦·⟧ = Hi·2⁶⁴ + Lo` of a non-negative integer. ∎
+*Proof.* For `L`, [`Before`](../local.go#L75) is `uint64` comparison and `⟦·⟧` is
+the identity, so the claim is trivial. For `G`,
+[`Before`](../global.go#L95) is `a.hi < b.hi ∨ (a.hi = b.hi ∧ a.lo < b.lo)`, which
+is exactly the lexicographic comparison of the base-2⁶⁴ representation
+`⟦·⟧ = hi·2⁶⁴ + lo` of a non-negative integer. ∎
+
+Because `G` stores `⟦·⟧` big-endian, the same lemma holds for `bytes.Compare`
+over the raw 12 bytes: byte-lexicographic order on a fixed-width big-endian
+numeral *is* numeric order. The library therefore has two agreeing comparators,
+and an external index that sorts the stored bytes — a B-tree, a sorted file, a
+key-value store — orders the identifiers correctly without decoding them.
 
 ### 1.5 Lemma 2 (positional comparison)
 
@@ -125,6 +148,28 @@ By Propositions 1–2 and Lemmas 1–2:
   `(𝑬, 𝒍, 𝒙ₗ, 𝒔)`**;
 * local values with equal drift code compare **lexicographically on `(𝒙, 𝒔)`**.
 
+### 1.6 The v3 representation
+
+v2 stored both shapes in one `struct{ Hi, Lo uint64 }`, 128 bits of which 96
+were ever used, and distinguished them by `Hi = 0`. Three obligations of this
+note came from that choice, and v3 discharges all three by construction:
+
+* **Slack bits.** 32 of `K`'s 128 bits were never written by `makeG` and never
+  read by `Before`, yet they were part of the value, so equality and map-key
+  identity depended on bits the schema does not define. `L` and `G` are exactly
+  as wide as the schema, so every bit of a value is a field of it and `==`
+  agrees with `Before`-equality.
+* **Mixed comparison.** `Before` over a local and a global value was
+  meaningless but well-typed, and put every local value ahead of every global
+  one. `L.Before` takes an `L` and `G.Before` takes a `G`, so the comparison no
+  longer type-checks; §5 records what replaced the warning.
+* **Discrimination.** `Hi = 0` doubled as "this is a local value", which is a
+  property of the *value*, not of the type. A global value with `𝑫 = 18` and
+  `𝑬 = 0` also has `hi = 0`; §7 had to argue that `driftInBits` never returns
+  18 to rule it out. The types carry the distinction now, so the argument is
+  no longer load-bearing — and `𝑫 = 18` was re-enabled once it was not, which
+  is where the `Δ = 34.4 s` rung of §1.1 comes from.
+
 ---
 
 ## 2. Assumptions
@@ -136,7 +181,7 @@ discuss when it fails.
   (The drift code is the most significant field, so values of different `𝑫`
   are segregated rather than interleaved.)
 * **(A2) Coupled allocation.** The pair `⟨𝒕,𝒔⟩` is drawn from the allocator of
-  [sequence.go](sequence.go), reproduced as Algorithm 1 in §3.2. This is not an
+  [sequence.go](../sequence.go), reproduced as Algorithm 1 in §3.2. This is not an
   assumption about the environment but a description of the implementation, and
   §3.3 discharges it into a property.
 * **(A5) Bounded skew.** Every node's clock satisfies `|C_𝒍(τ) − τ| ≤ ε` for
@@ -178,7 +223,7 @@ lexicographically, which by Lemma 2 is the order of the single number
 `𝑽` is the object the implementation actually maintains — one machine word,
 shared by all allocators of a time domain:
 
-> **Algorithm 1** (`sequence.next`, [sequence.go](sequence.go)). On allocation
+> **Algorithm 1** (`sequence.next`, [sequence.go](../sequence.go)). On allocation
 > with clock reading `𝒕`, let `𝒃 = ⌊𝒕/2¹⁷⌋·2¹⁴`.
 >
 > 1. *advance.* If `𝒃` exceeds the last observed tick, one allocator wins a
@@ -218,11 +263,11 @@ Monotonicity is a property of the two write forms alone.
 by the division identity `⌊𝑽/2¹⁴⌋·2¹⁴ + (𝑽 mod 2¹⁴) = 𝑽`. The drift codes are
 equal by (A1), so comparing values is comparing `𝑽`. ∎
 
-This is `Guid.packL_split` and `Guid.packL_lt_of_lt` in [prove.lean](prove.lean).
+This is `Guid.packL_split` and `Guid.packL_lt_of_lt` in [proof.lean](proof.lean).
 
 ### 3.5 Theorem 1 (linearizability)
 
-*Under (A1) and (A2), every history of `guid.L` is linearizable with respect to
+*Under (A1) and (A2), every history of `NewL` is linearizable with respect to
 the strictly-increasing-generator specification, with the atomic add of step 2
 as the linearization point.*
 
@@ -250,7 +295,225 @@ Three remarks.
   of real time by `2¹⁷ ns` per `2¹⁴` values over budget, i.e. **8 ns per value**.
   Sustained headroom before any run-ahead accumulates is `2¹⁴` per `2¹⁷ ns`, or
   `1.25·10⁸` values per second per process. Run-ahead is self-correcting: it
-  decays as soon as the burst ends.
+  decays as soon as the burst ends. §3.6 gives the rates.
+
+### 3.6 Run-ahead under load
+
+Theorem 1 costs nothing in *order*. It costs something in *accuracy*: an
+allocator that outruns its clock reports a `⟨𝒕⟩` that has not happened yet.
+This section quantifies how fast that gap opens, how fast it closes, and at
+what load either becomes observable.
+
+#### The two flows
+
+By Lemma 4, `𝑽` is the timestamp denominated in units of
+
+```
+  𝒒 = 2¹⁷/2¹⁴ = 2³ = 8 ns ,
+```
+
+so both writers of the word move it in the same currency: *allocate* adds `1`,
+which is `𝒒` of clock-face, and *advance* pins the word to the clock. Define the
+**divergence** of an allocator whose clock reads `C(τ)` at real time `τ`:
+
+```
+  δ(τ) = 𝒒·𝑽(τ) − C(τ)   ≥ 0 .
+```
+
+It is non-negative because step 1 only ever raises `𝑽` to the clock, never
+lowers it — run-ahead is one-sided, which matters in §4.
+
+#### The equation
+
+Let `ρ(τ)` be the instantaneous allocation rate of the process. In the fluid
+limit (many allocations per tick, so the `+1` steps are a flow), allocation
+contributes `𝒒·ρ` of clock-face per second while real time contributes `10⁹` ns
+per second, and the advance step acts as a reflecting barrier at `δ = 0`:
+
+```
+  dδ/dτ  =  𝒒·ρ(τ) − 10⁹        while δ > 0
+  δ      ≥  0                    (advance pins it when the clock catches up)
+```
+
+Writing the break-even rate
+
+```
+  ρ* = 10⁹/𝒒 = 1.25·10⁸  allocations per second,
+```
+
+the equation is just
+
+```
+  dδ/dτ = 𝒒·(ρ − ρ*) ,        δ ≥ 0 .
+```
+
+This is a fluid queue, and recognizing it as one is the shortest route to every
+statement below: each allocation is an arrival demanding `𝒒` of time-budget,
+the clock is a server draining budget at rate 1, and `δ` is the backlog. The
+library's run-ahead is a leaky bucket whose leak rate is the passage of time.
+
+#### Gain
+
+For a constant `ρ > ρ*` the backlog grows linearly with slope
+
+```
+  g(ρ) = 𝒒·(ρ − ρ*) = 8ρ − 10⁹     [ns of divergence per second of real time]
+  g(ρ) = 0                          for ρ ≤ ρ*
+```
+
+```
+   g(ρ)
+   s/s |
+   3.0 |              :                                      ***
+   2.7 |              :                                  ****
+   2.3 |              :                             *****
+   2.0 |              :                        *****
+   1.7 |              :                    ****
+   1.3 |              :               *****
+   1.0 |              :           ****
+   0.7 |              :      *****
+   0.3 |              :  ****
+   0.0 |*****************
+       +--------------------------------------------------------
+        0            ρ*            2ρ*          3ρ*          4ρ*
+```
+
+The hinge is the whole picture: below `ρ*` the gain is not small, it is
+**exactly zero** — the advance step re-anchors `𝑽` to the clock on every tick
+and no history accumulates. Above it the divergence grows without bound for as
+long as the load lasts.
+
+A burst of `𝑵` allocations delivered at rate `ρ > ρ*` lasts `𝑵/ρ` and therefore
+peaks at
+
+```
+  δ_peak = 𝒒·𝑵·(1 − ρ*/ρ)   ⟶   𝒒·𝑵 = 8𝑵 ns   as ρ → ∞ .
+```
+
+An instantaneous burst of `𝑵` identifiers puts the clock face `8𝑵` ns ahead.
+Sanity check: `𝑵 = 2¹⁴` gives `8·16384 = 2¹⁷ ns`, exactly one tick — the
+"`2¹⁷ ns` per `2¹⁴` values over budget" of §3.5.
+
+#### Cool-down
+
+For `ρ < ρ*` the same equation runs backwards, with slope
+
+```
+  c(ρ) = 𝒒·(ρ* − ρ) = 10⁹ − 8ρ     [ns recovered per second of real time]
+```
+
+so that `δ(τ) = max(0, δ_peak − c(ρ)·τ)` and the gap closes after
+
+```
+                δ_peak             δ_peak         1
+  τ_cool  =  ------------  =  ( ---------- ) · ---------- .
+              10⁹ − 8ρ             10⁹          1 − ρ/ρ*
+```
+
+The first factor is the divergence read as a duration; the second is a
+**stretch factor** set by the background load. At idle the allocator recovers
+one nanosecond of divergence per nanosecond of real time, so `τ_cool` in
+seconds is numerically `δ_peak` in nanoseconds over `10⁹` — the divergence pays
+itself back in its own units.
+
+```
+   δ
+  ms  |
+ 11.0 |
+ 10.0 |                 *o
+  9.0 |               ** **oo
+  8.0 |             **     **oooo
+  7.0 |           **         *   ooo
+  6.0 |          *            **    oooo
+  5.0 |        **               **      ooo
+  4.0 |      **                   *        ooo
+  3.0 |     *                      **         oooo
+  2.0 |   **                         **           ooo
+  1.0 | **                             *             ooo
+  0.0 |*                                ***************************
+      +------------------------------------------------------------
+       0               10               20               30     τ, ms
+
+       burst at 2ρ* for 10 ms, then:   * idle (ρ = 0)   o ρ = ρ*/2
+```
+
+Both curves share the rise — gain depends only on the burst — and differ only
+in the drain. The stretch factor is the practical content:
+
+| background `ρ` | `1/(1 − ρ/ρ*)` | 10 ms of divergence clears in |
+|---|---|---|
+| 0 (idle) | 1 | 10 ms |
+| `ρ*/2` | 2 | 20 ms |
+| `0.9 ρ*` | 10 | 100 ms |
+| `0.99 ρ*` | 100 | 1 s |
+| `≥ ρ*` | ∞ | never |
+
+#### Without the fluid approximation
+
+The continuous form above is a convenience; the exact statement needs no limit.
+Let `A(s,τ)` be the number of allocations in `(s,τ]`. Since `𝑽` advances by `𝒒`
+per allocation and is reflected upward to the clock, the backlog obeys the
+Lindley recursion, whose closed form is the supremum over all past windows:
+
+```
+  δ(τ) = max ( 0 ,  sup  [ 𝒒·A(s,τ) − (τ − s)·10⁹ ] ) .
+                   s ≤ τ
+```
+
+Two consequences follow directly, and neither mentions a peak rate:
+
+* **Boundedness is a statement about averages.** `δ` stays bounded iff some
+  window-length-normalized excess is bounded, i.e. iff the *time-averaged*
+  allocation rate stays below `ρ*`. A process may exceed `ρ*` arbitrarily often
+  without accumulating anything, provided it is under `ρ*` on average. The peak
+  rate sets the slope of an excursion; the mean rate decides whether the
+  excursions return.
+* **Sub-tick run-ahead is not observable.** A tick is `2¹⁷ ns` and holds `2¹⁴`
+  sequence slots, so a process under budget ends any tick with
+  `δ < 2¹⁴·𝒒 = 2¹⁷ ns` — one tick, which is precisely the resolution of
+  `Time(uid)`. Below `ρ*` the divergence is therefore always smaller than the
+  quantity it perturbs, and no reader can detect it.
+
+#### What it costs, in numbers
+
+| sustained `ρ` | `g(ρ)` | divergence after 1 s | after 1 min |
+|---|---|---|---|
+| 10⁶ /s | 0 | 0 | 0 |
+| 10⁷ /s | 0 | 0 | 0 |
+| 10⁸ /s | 0 | 0 | 0 |
+| `ρ*` = 1.25·10⁸ /s | 0 | 0 | 0 |
+| 2·10⁸ /s | 0.6 s/s | 600 ms | 36 s |
+| 10⁹ /s | 7 s/s | 7 s | 7 min |
+
+The first four rows are the design's actual answer: `𝒒` is about the cost of
+the `lock xadd` in [`sequence.next`](../sequence.go) itself, so a process cannot
+reach `ρ*` while doing anything with the identifiers it allocates. Run-ahead is
+reachable only by a loop that allocates and discards.
+
+#### Consequence for Part II
+
+Run-ahead is indistinguishable from a fast clock, so it enters §4 as skew. It
+is one-sided, which makes the accounting asymmetric: the values an allocator
+produces are built from the effective clock `C(τ) + δ(τ)`, so under (A5)
+
+```
+  𝒄ⱼ ≥ τⱼ − ε                    (run-ahead only pushes readings up)
+  𝒄ᵢ ≤ τᵢ + ε + δ_max
+```
+
+and re-running the proof of Lemma 7 with these bounds gives the inversion
+window
+
+```
+  𝑾 = Δ + 2ε + δ_max
+```
+
+rather than `Δ + 2ε`. A cluster whose allocators stay under `ρ*` has
+`δ_max < 2¹⁷ ns = 131 µs`, which is `2¹⁷/2³⁵ = 2⁻¹⁸ ≈ 3.8·10⁻⁶` of the
+smallest available `Δ`;
+the term is real but never the one that matters. A cluster that sustains
+`ρ > ρ*` has an unbounded `δ_max` and therefore no `𝒌`-ordering guarantee at
+all — which is the load bound (A6) seen from the other side.
 
 ## 4. Part II — global values are k-ordered
 
@@ -380,6 +643,19 @@ So the global sequence is an `𝑵`-way **merge of `𝑵` individually sorted
 streams**, and every inversion is a cross-node inversion. Theorem 2 bounds how
 far the merge can be off; Corollary 2 says the disorder is entirely inter-node.
 
+Operationally this corollary, not Theorem 2, is the one the library is built
+around. Combined with Lemma 5 it says that inside one epoch the key space is
+*partitioned by allocator*: each node's values form a contiguous run, and each
+run is exactly sorted. That is the property a leader-follower hand-over needs.
+When a leader fails silently there is an interval in which two nodes write to
+the same range; under a schema that ranks the whole timestamp above node
+identity their writes interleave and attribution requires a side channel, while
+here they occupy disjoint ranges that can be scanned, bounded and reconciled.
+`Δ` is the width of that interval, which is why §1.1 calls it a configured
+tolerance and the README reads it as a failover budget — they are the same
+quantity seen from the two ends. Theorem 2 is then best read as the *price*:
+the bound on how far the merge can be off, paid in exchange for the partition.
+
 ### 4.8 Sharpness
 
 `𝑾 = Δ + 2ε` cannot be replaced by anything smaller. Take two nodes with
@@ -404,17 +680,19 @@ construction above predicts.
 If the cluster allocates at a peak aggregate rate of `ρ` identifiers per
 second, then `𝒌 = ⌈ρ·𝑾⌉ = ⌈ρ·(Δ + 2ε)⌉`. With `ε = 1 s`:
 
-| `ρ` \ `𝑫` | 19 (`Δ`=68.7 s) | 21 (`Δ`=274.9 s, default) | 25 (`Δ`=4398 s) |
+| `ρ` \ `𝑫` | 18 (`Δ`=34.4 s, floor) | 21 (`Δ`=274.9 s, default) | 25 (`Δ`=4398 s) |
 |---|---|---|---|
-| 10³ /s | 7.1·10⁴ | 2.8·10⁵ | 4.4·10⁶ |
-| 10⁵ /s | 7.1·10⁶ | 2.8·10⁷ | 4.4·10⁸ |
-| 10⁶ /s | 7.1·10⁷ | 2.8·10⁸ | 4.4·10⁹ |
+| 10³ /s | 3.6·10⁴ | 2.8·10⁵ | 4.4·10⁶ |
+| 10⁵ /s | 3.6·10⁶ | 2.8·10⁷ | 4.4·10⁸ |
+| 10⁶ /s | 3.6·10⁷ | 2.8·10⁸ | 4.4·10⁹ |
 
 `𝒌` is an index-space quantity and therefore grows with throughput; the
 time-space statement of Lemma 7 — *two values allocated more than `Δ + 2ε`
 apart are always correctly ordered* — is invariant and is the one to reason
 with. Choosing `𝑫` is exactly the trade: a larger `Δ` tolerates more clock
-skew, a smaller `Δ` yields a tighter `𝒌`.
+skew, a smaller `Δ` yields a tighter `𝒌`. The floor of the ladder bounds how
+tight `𝒌` can be made: `𝑫 = 18` is the smallest the 96-bit layout admits, so
+`𝑾 ≥ 34.4 s + 2ε` whatever the deployment's clocks are worth.
 
 ---
 
@@ -430,15 +708,17 @@ skew, a smaller `Δ` yields a tighter `𝒌`.
   the same `𝒙ₗ` and `𝒔` collide. With 32-bit random `𝒍`, the birthday bound
   gives ≈ 65 000 allocators for a collision probability near ½ — the figure
   quoted in the README.
-* Mixed comparison of local and global values is not addressed: a local value
-  has `Hi = 0`, so under `Before` all local values precede all global ones.
-  Convert with `FromL` / `ToL` before comparing.
+* Mixed comparison of local and global values is not addressed, and since v3
+  cannot be written: `L` and `G` are distinct types and neither `Before`
+  accepts the other. Convert with `L.ToG` / `G.ToL` first. The conversion
+  preserves `⟨𝒕,𝒔⟩` exactly (Propositions 1 and 2 agree on those fields), so a
+  set converted to one type compares under the theorems of §3 and §4.
 
 ---
 
 ## 6. The Lean 4 formalization
 
-[prove.lean](prove.lean) formalizes §3 and §4 in Lean 4 (no Mathlib, no
+[proof.lean](proof.lean) formalizes §3 and §4 in Lean 4 (no Mathlib, no
 Batteries; Lean 4 core `Nat` only). It contains:
 
 | Lean name | this document |
@@ -472,7 +752,7 @@ system, not for a particular schedule.
 Check it with:
 
 ```bash
-lean prove.lean      # Lean 4; no dependencies
+lean proof.lean      # Lean 4; no dependencies
 ```
 
 **Status: verified** with Lean 4.34.0 (arm64-apple-darwin). The file emits no
@@ -508,15 +788,28 @@ now rests on.
 
 **(A1) — drift must be fixed cluster-wide.** `⟨𝒅⟩` is the most significant
 field, so two values allocated at the same instant with different drift
-settings are ordered by their drift, not their time. `guid.G(clock)` and
-`guid.G(clock, 10*time.Minute)` must not be mixed within one keyspace.
+settings are ordered by their drift, not their time.
 
-**(A2) — `WithUnique` opts out.** `WithUnique` supplies `⟨𝒔⟩` from a generator
-independent of `⟨𝒕⟩`, which is exactly the coupling Algorithm 1 exists to
-provide. A history using it is outside Theorem 1 unless the supplied generator
-is itself monotone and never folds back while `⟨𝒕⟩` stands still. The option is
-deprecated for this reason; it remains useful for tests and for a constant
-`⟨𝒔⟩`.
+v2 accepted the drift as an optional argument of every allocator, which put a
+quantity that must be constant across a keyspace — and across the lifetime of
+the data — at the call site, where it varies most easily. v3 binds it to the
+clock instead: `WithDrift` configures it, [`Chronos.Drift`](../clock.go#L38)
+reports it, and `NewG` / `NewL` read it from there. One clock is therefore one
+drift by construction, and (A1) reduces to a statement about clocks:
+`guid.NewClock(guid.WithDrift(60*time.Second))` and
+`guid.NewClock(guid.WithDrift(10*time.Minute))` must not feed one keyspace.
+The library cannot enforce that across processes, so (A1) remains an
+assumption — but it is no longer one an allocation can violate on its own.
+
+**(A2) — `⟨𝒕⟩` and `⟨𝒔⟩` must come from one allocator.** v2 let an application
+supply `⟨𝒔⟩` from a generator independent of `⟨𝒕⟩` (`WithUnique`), which is
+exactly the coupling Algorithm 1 exists to provide; such a history was outside
+Theorem 1 unless the supplied generator was itself monotone and never folded
+back while `⟨𝒕⟩` stood still. v3 removes the option: `Chronos.T` returns the
+pair and no exported configuration decouples it, so (A2) holds by construction
+for every clock the library builds. It survives as an assumption only for a
+hand-written `Chronos`, whose `T` must return a pair `⟨𝒕,𝒔⟩` that strictly
+increases in the sense of Lemma 3.
 
 **The hazard Algorithm 1 removes.** Before the coupled allocator, `⟨𝒔⟩` came
 from a free-running process-global counter, `𝒔 = 𝒏 mod 2¹⁴`, read separately
@@ -533,7 +826,7 @@ A tick holding only two allocations, numbered `𝒏 = 16383` and `𝒏 = 16384`,
 four orders of magnitude under budget and still inverted; a tick holding 16 000
 allocations numbered `100 … 16 099` is perfectly ordered. The count bounds how
 many crossings can occur, never where one occurs, and one is enough. This is
-`Guid.wrap_inverts` in [prove.lean](prove.lean), stated for arbitrary `𝒅` and
+`Guid.wrap_inverts` in [proof.lean](proof.lean), stated for arbitrary `𝒅` and
 `𝒙`.
 
 Measured on the previous implementation: two allocations forced across the
@@ -554,12 +847,7 @@ Algorithm 1 a backwards step cannot invert anything: step 1 does not fire and
 accuracy, not order — `Time(uid)` reports the high water mark until real time
 catches up. NTP slewing is harmless either way.
 
-Two minor observations, neither reachable through the public API:
-
-* A global value with `𝑫 = 18` and `𝑬 = 0` has `Hi = 0` and is indistinguishable
-  from a local value. This needs `𝒕 < 2³⁵ ns`, i.e. the first 34 seconds of
-  1970, and `driftInBits` never returns 18 (the `≤ 34 s` case is commented out
-  in [common.go](common.go#L34)), so it cannot occur.
-* `Diff` subtracts `𝒕` and `𝒔` independently and re-packs; the result is a
-  well-formed `K` only when `Time(a) ≥ Time(b)` and `Seq(a) ≥ Seq(b)`. It is an
-  approximation by its own documentation and is outside the scope of this note.
+One minor observation, not reachable through the public API: `Diff` subtracts
+`𝒕` and `𝒔` independently and re-packs; the result is a well-formed value only
+when `a.Time() ≥ b.Time()` and `a.Seq() ≥ b.Seq()`. It is an approximation by
+its own documentation and is outside the scope of this note.

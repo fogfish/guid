@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fogfish/guid/v2"
+	"github.com/fogfish/guid/v3"
 	"github.com/fogfish/it/v2"
 )
 
@@ -31,10 +31,10 @@ func TestWithNodeID(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithNodeID(0xfedcba98),
 	)
-	a := guid.G(c)
+	a := guid.NewG(c)
 
 	it.Then(t).Should(
-		it.Equal(guid.Node(a), 0xfedcba98),
+		it.Equal(a.Node(), 0xfedcba98),
 	)
 }
 
@@ -44,10 +44,10 @@ func TestWithNodeFromEnv(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithNodeFromEnv(),
 	)
-	a := guid.G(c)
+	a := guid.NewG(c)
 
 	it.Then(t).Should(
-		it.Equal(guid.Node(a), 0x53051caf),
+		it.Equal(a.Node(), 0x53051caf),
 	)
 }
 
@@ -55,10 +55,10 @@ func TestWithNodeRand(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithNodeRandom(),
 	)
-	a := guid.G(c)
+	a := guid.NewG(c)
 
 	it.Then(t).ShouldNot(
-		it.Equal(guid.Node(a), 0x0),
+		it.Equal(a.Node(), 0x0),
 	)
 }
 
@@ -66,10 +66,10 @@ func TestWithClock(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithClock(func() uint64 { return 0xfedcba98 << 16 }),
 	)
-	a := guid.G(c)
+	a := guid.NewG(c)
 
 	it.Then(t).Should(
-		it.Equal(guid.Time(a), 0xfedcba98<<16),
+		it.Equal(a.Time(), 0xfedcba98<<16),
 	)
 }
 
@@ -77,14 +77,14 @@ func TestWithClockUnix(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithClockUnix(),
 	)
-	a := guid.G(c)
-	b := guid.G(c)
+	a := guid.NewG(c)
+	b := guid.NewG(c)
 	time.Sleep(2 * time.Second)
-	d := guid.G(c)
+	d := guid.NewG(c)
 
 	it.Then(t).Should(
-		it.True(guid.Before(a, b)),
-		it.True(guid.Before(b, d)),
+		it.True(a.Before(b)),
+		it.True(b.Before(d)),
 	)
 }
 
@@ -92,14 +92,14 @@ func TestWithClockInverse(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithClockInverse(),
 	)
-	a := guid.G(c)
-	b := guid.G(c)
+	a := guid.NewG(c)
+	b := guid.NewG(c)
 	time.Sleep(2 * time.Second)
-	d := guid.G(c)
+	d := guid.NewG(c)
 
 	it.Then(t).Should(
-		it.True(guid.After(a, b)),
-		it.True(guid.After(b, d)),
+		it.True(a.After(b)),
+		it.True(b.After(d)),
 	)
 }
 
@@ -107,31 +107,15 @@ func TestWithMock(t *testing.T) {
 	c := guid.NewClockMock(
 		guid.WithNodeID(0x0),
 	)
-	a := guid.G(c)
+	a := guid.NewG(c)
+	b := guid.NewG(c)
 
 	it.Then(t).Should(
-		it.Equal(guid.Node(a), 0),
-		it.Equal(guid.Time(a), 0),
-		it.Equal(guid.Seq(a), 0),
-	)
-}
-
-func TestWithUnique(t *testing.T) {
-	c := guid.NewClock(
-		guid.WithClockUnix(),
-		guid.WithUnique(func() uint64 { return 0 }),
-	)
-	a := guid.G(c)
-	time.Sleep(1 * time.Second)
-	b := guid.G(c)
-	time.Sleep(2 * time.Second)
-	d := guid.G(c)
-
-	it.Then(t).Should(
-		it.True(guid.Before(a, b)),
-		it.True(guid.Before(b, d)),
-		it.Equal(guid.Seq(a), 0),
-		it.Equal(guid.Seq(b), 0),
-		it.Equal(guid.Seq(d), 0),
+		it.Equal(a.Node(), 0),
+		it.Equal(a.Time(), 0),
+		it.Equal(a.Seq(), 0),
+		// the mock is deterministic, it repeats the very same value
+		it.Equal(a, b),
+		it.Equal(guid.NewL(c), guid.NewL(c)),
 	)
 }

@@ -27,15 +27,21 @@ import (
 // Chronos is an abstraction of logical clock used by library.
 type Chronos interface {
 	// Spatially unique identifier ⟨𝒍⟩ of ID allocator so called node location
-	L() uint64
-	// Monotonically increasing logical clock ⟨𝒕⟩
+	Node() uint64
+	// Allocates the coupled ⟨𝒕,𝒔⟩ fraction of a k-ordered value
 	T() (uint64, uint64)
+	// ⟨𝒅⟩ drift, the number of ⟨𝒕⟩ bits that rank below ⟨𝒍⟩.
+	//
+	// The drift decides how much clock disagreement the k-ordering tolerates
+	// and it must be the same for every value of a keyspace. It is a property
+	// of the clock so that a process cannot vary it per allocation.
+	Drift() uint64
 }
 
 // Clock is global default instance of logical clock
 //
 // If the application needs own default clock e.g. inverse one, it declares own
-// clock and pair of GID & LID functions.
+// instance of Chronos and passes it to NewG or NewL.
 var Clock Chronos = NewClock()
 
 // Logical Clock Type, the default one
@@ -46,11 +52,13 @@ type clock struct {
 	ticker func() uint64
 	// Allocator of the coupled ⟨𝒕,𝒔⟩ pair, see sequence
 	advance func(uint64) uint64
-	// Decoupled ⟨𝒔⟩ generator, engaged only by WithUnique
-	unique func() uint64
+	// ⟨𝒅⟩ drift in bits, see driftInBits
+	drift uint64
 }
 
-func (clock clock) L() uint64 { return clock.location }
+func (clock clock) Node() uint64 { return clock.location }
+
+func (clock clock) Drift() uint64 { return clock.drift }
 
 // T allocates the ⟨𝒕,𝒔⟩ fraction of a k-ordered value.
 //
@@ -58,10 +66,6 @@ func (clock clock) L() uint64 { return clock.location }
 // strictly increases with every call and values are ordered exactly as they
 // are allocated. See sequence for why the two cannot be drawn independently.
 func (clock clock) T() (uint64, uint64) {
-	if clock.unique != nil {
-		return clock.ticker(), clock.unique()
-	}
-
 	v := clock.advance(clock.ticker())
 	return v >> bitsSeq << bitsSeqDrift, v & maskSeq
 }
@@ -69,7 +73,7 @@ func (clock clock) T() (uint64, uint64) {
 // Creates instance of logical clock
 func NewClock(opts ...Config) Chronos {
 	clock := &clock{}
-	defopt := []Config{WithClockUnix(), WithNodeRandom()}
+	defopt := []Config{WithClockUnix(), WithNodeRandom(), WithDrift(driftDefault)}
 
 	for _, opt := range append(defopt, opts...) {
 		opt(clock)
@@ -77,12 +81,16 @@ func NewClock(opts ...Config) Chronos {
 	return clock
 }
 
-// Create mock instance of logical clock
+// NewClockMock creates a deterministic instance of logical clock. It pins the
+// ⟨𝒕,𝒔⟩ pair to ⟨0,0⟩, so that every value it allocates is identical. The mock
+// is intended for tests that assert on a fixed value; it allocates nothing
+// unique and must not be used in production.
 func NewClockMock(opts ...Config) Chronos {
 	clock := &clock{
 		location: 0,
 		ticker:   func() uint64 { return 0 },
-		unique:   func() uint64 { return 0 },
+		advance:  func(uint64) uint64 { return 0 },
+		drift:    driftInBits(driftDefault),
 	}
 
 	for _, opt := range opts {
@@ -95,6 +103,20 @@ func NewClockMock(opts ...Config) Chronos {
 // Config options allows to define custom strategies to generate
 // ⟨𝒍⟩ location or ⟨𝒕⟩ timestamp.
 type Config func(*clock)
+
+// WithDrift configures ⟨𝒅⟩, the clock disagreement the k-ordering tolerates.
+//
+// The value is rounded up to the next supported rung; the ladder runs from
+// 34.36 s to 4398 s in factor-of-two steps and defaults to 274.9 s. A larger
+// drift tolerates more skew, a smaller one yields a tighter k. See driftInBits.
+//
+// Every clock of a keyspace must be configured with the same drift, otherwise
+// values are ordered by their drift rather than by their time.
+func WithDrift(drift time.Duration) Config {
+	return func(clock *clock) {
+		clock.drift = driftInBits(drift)
+	}
+}
 
 // WithNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier
 func WithNodeID(id uint64) Config {
@@ -147,7 +169,6 @@ func WithClock(ticker func() uint64) Config {
 		seq := &sequence{}
 		clock.ticker = ticker
 		clock.advance = seq.next
-		clock.unique = nil
 	}
 }
 
@@ -159,7 +180,6 @@ func WithClockDescending(ticker func() uint64) Config {
 		seq := descending()
 		clock.ticker = ticker
 		clock.advance = seq.prev
-		clock.unique = nil
 	}
 }
 
@@ -168,7 +188,6 @@ func WithClockUnix() Config {
 	return func(clock *clock) {
 		clock.ticker = unixtime
 		clock.advance = seqAscending.next
-		clock.unique = nil
 	}
 }
 
@@ -182,27 +201,9 @@ func WithClockInverse() Config {
 	return func(clock *clock) {
 		clock.ticker = inversetime
 		clock.advance = seqDescending.prev
-		clock.unique = nil
 	}
 }
 
 func inversetime() uint64 {
 	return 0xffffffffffffffff - uint64(time.Now().UnixNano())
-}
-
-// WithUnique configures a generator for ⟨𝒔⟩ that is independent of ⟨𝒕⟩.
-//
-// Deprecated: the library allocates ⟨𝒕⟩ and ⟨𝒔⟩ as one atomic pair, which is
-// what makes values sort in allocation order. Supplying ⟨𝒔⟩ separately opts out
-// of that coupling: unless the generator is itself monotone and never folds
-// back while ⟨𝒕⟩ stands still, values allocated within the same 2¹⁷ nanosecond
-// tick can sort in the opposite order to their allocation. It remains available
-// for tests and for applications that need a fixed ⟨𝒔⟩.
-//
-// The option must be applied after WithClock, WithClockUnix, WithClockInverse
-// or WithClockDescending, each of which re-engages the coupled allocation.
-func WithUnique(unique func() uint64) Config {
-	return func(clock *clock) {
-		clock.unique = unique
-	}
 }
