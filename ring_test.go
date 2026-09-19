@@ -82,6 +82,25 @@ func TestOrdRingAtOriginIsBeforeX(t *testing.T) {
 	}
 }
 
+// The X counterpart of TestOrdRingAtOriginIsBeforeMixedDrift: ⟨𝒅⟩ segregates
+// rungs in the payload the same way it does in G, and OrdRingX.Compare has
+// its own early-return for a drift mismatch, so it needs its own witness.
+func TestOrdRingAtOriginIsBeforeMixedDriftX(t *testing.T) {
+	uids := []guid.X{}
+	for _, drift := range drifts {
+		uids = append(uids, allocX(t, drift, 8)...)
+	}
+
+	ord := guid.OrdRingX(0)
+	for _, a := range uids {
+		for _, b := range uids {
+			it.Then(t).Should(
+				it.Equal(ord.Before(a, b), a.Before(b)),
+			)
+		}
+	}
+}
+
 // The point of the comparator: whoever owns the key sorts first, at every cut
 // point. Values are allocated at one instant on nodes spread around the ring,
 // so ⟨𝑬⟩ is shared and ⟨𝒍⟩ alone decides — the case Before gets wrong on the
