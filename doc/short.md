@@ -33,11 +33,17 @@ The library ships this layout at three widths. They differ only in how much
 room is left for the node id — none, 32 bits, or 58 — and everything below is
 true of all three.
 
-| | size | node id | |
-|---|---|---|---|
-| `guid.L` | 8 B | — | unique within one allocator |
-| `guid.G` | 12 B | 32 bit | ≈ 65 000 allocators before collisions matter |
-| `guid.X` | 16 B | 58 bit | ≈ 5.4·10⁸, and it **is** an RFC 9562 UUID (v8) |
+|          | size | node id | space if assigned                                         | space if random                    |
+| -------- | ---- | ------- | --------------------------------------------------------- | ---------------------------------- |
+| `guid.L` | 8 B  | —       | unique within one allocator                               | —                                  |
+| `guid.G` | 12 B | 32 bit  | up to 2³² ≈ 4.3·10⁹ allocators                            | ≈ 65 000 before collisions matter  |
+| `guid.X` | 16 B | 58 bit  | up to 2⁵⁸ allocators, and it **is** an RFC 9562 UUID (v8) | ≈ 5.4·10⁸ before collisions matter |
+
+The "space if random" column is the birthday bound — it only applies when node
+ids are drawn from a random generator. Assign them instead (sequential
+counter, MAC-derived, or otherwise coordinated) and the birthday paradox does
+not apply: the space is the full field width, since collisions come from
+double-assignment, not from chance.
 
 The one unusual move: **the node id sits in the middle of the timestamp.**
 Coarse time is above it, fine time below it. That single choice produces
@@ -71,12 +77,12 @@ interval between a silent failure and the moment the cluster has converged on a
 new owner, because that is exactly the interval during which two allocators
 write to the same range:
 
-| rung | `Δ` | covers |
-|---|---|---|
-| `Drift1ms` – `Drift268ms` | 1.05 ms – 268 ms | synchronized clocks; the ordering class of Snowflake and UUIDv7 |
-| `Drift2s` – `Drift17s` | 2.15 s – 17.2 s | consumer devices, lease expiry, fast failure detectors |
-| `Drift275s` *(default)* – `Drift1099s` | 274.9 s – 1099 s | gossip / phi-accrual detection, slow cross-region hand-over |
-| `Drift4398s` | 4398 s | human-in-the-loop failover |
+| rung                                   | `Δ`              | covers                                                          |
+| -------------------------------------- | ---------------- | --------------------------------------------------------------- |
+| `Drift1ms` – `Drift268ms`              | 1.05 ms – 268 ms | synchronized clocks; the ordering class of Snowflake and UUIDv7 |
+| `Drift2s` – `Drift17s`                 | 2.15 s – 17.2 s  | consumer devices, lease expiry, fast failure detectors          |
+| `Drift275s` *(default)* – `Drift1099s` | 274.9 s – 1099 s | gossip / phi-accrual detection, slow cross-region hand-over     |
+| `Drift4398s`                           | 4398 s           | human-in-the-loop failover                                      |
 
 Below a second the window `Δ + 2ε` is dominated by the clock skew `ε` rather
 than by `Δ`, so the low rungs pay off only where the clocks are genuinely
@@ -89,11 +95,17 @@ RTC, devices behind firewalls that block NTP, VMs resuming from snapshot,
 phones returning from airplane mode. Tens of seconds of disagreement is the
 distribution there, not a pathology.
 
-> If ⟨l⟩ is meant to carry topology, **assign it rather than randomize it**.
-> The default [`WithNodeRandom`](../clock.go#L197) gives distinct allocators,
-> but random identities sort arbitrarily, so adjacent ring positions land far
-> apart. Derive ⟨l⟩ from ring position with
-> [`WithNodeID`](../clock.go#L164) when sort order should follow the topology.
+> **⟨l⟩ is an ordered field, and assigning it is management plane.** The node
+> identity is not an opaque tag that only has to differ — it is a position in an
+> ordered space, and the key space ranks by that order. So take it from
+> something you already order — ring position, shard number, membership index —
+> with [`WithNodeID`](../clock.go#L164), and adjacency in the key space becomes
+> adjacency in the topology. This costs nothing at allocation time: ⟨l⟩ is fixed
+> once, out of band, wherever membership is already decided, while allocation
+> itself stays lock-free and consults nobody. The default
+> [`WithNodeRandom`](../clock.go#L197) is a seeding policy for that same ordered
+> space — it picks *which* position a node takes, so the result still sorts, but
+> arbitrarily, and adjacent ring positions land far apart.
 
 ## The three results
 
@@ -104,16 +116,12 @@ Always.
 
 The reason is simpler than you would expect: the process keeps **one counter**,
 and the identifier *is* that counter plus a constant. The counter only moves up
-— allocating does `+1`, a clock tick does `max(counter, clock)`. A number that
-only increases, incremented atomically, hands out increasing values. That is
-the whole proof (Theorem 1, §3.5).
+— allocating does `+1`. A number that only increases, incremented atomically,
+hands out increasing values. That is the whole proof (Theorem 1, §3.5).
+The counter is protected from NTP moving the clock backwards. 
 
-Notice what is missing: no assumption about the clock. NTP can step the clock
-backwards and ordering still holds — the `max` simply does not fire and the
-counter continues from its high-water mark. No assumption about rate either.
-You cannot break this by allocating too fast.
-
-> **This used to be false.** Older versions drew the timestamp and the counter
+> **This used to be false in version 2 of the library.**
+> Older versions drew the timestamp and the counter
 > from two independent sources. The counter wrapped every 16,384 values, and if
 > it wrapped while the timestamp stood still, two identifiers came out
 > backwards. The trap was that staying under 16,384 allocations per tick *did
@@ -127,11 +135,18 @@ You cannot break this by allocating too fast.
 The guarantee has a shape worth stating precisely:
 
 > Two identifiers allocated **more than `W = Δ + 2ε` apart** in real time are
-> always correctly ordered. Two identifiers allocated **closer than that** may
-> be in either order.
+> ordered by their allocation time. Two identifiers allocated **closer than
+> that** are ordered by ⟨l⟩, then fine time, then counter — an order that need
+> not follow allocation time.
 
-where `ε` is your worst clock skew. Disorder exists, but it is confined to a
-window, and you know the window.
+where `ε` is your worst clock skew. Note what is *not* being claimed. The order
+is never undetermined: identifiers are numbers, comparison is lexicographic on
+`(⟨d⟩, ⟨E⟩, ⟨l⟩, ⟨xₗ⟩, ⟨s⟩)`, and every field is a strict order, so any two
+values compare the same way every time, for everyone. Inside the window the
+order is as total and as reproducible as outside it. What `W` bounds is the
+*divergence between that order and real time* — and randomizing ⟨l⟩ does not
+weaken this, it only selects which permutation of the nodes the key space ranks
+by, once, when the ids are drawn.
 
 Why: the coarse-time field outranks everything below it, and the fields below
 it cannot sum large enough to carry into it. So a difference in coarse time can
@@ -148,21 +163,56 @@ more than `k` positions.
 Fix the node id and the comparison collapses back to case 1. So the useful
 mental model is:
 
-> **The global stream is N perfectly sorted streams, merged sloppily.**
+> **The global stream is N perfectly sorted streams, concatenated as
+> node-id runs per bucket — exactly, not approximately.**
 
-Every inversion is between nodes. None is within a node. If you shard by node,
-each shard is exactly ordered.
+"Concatenated," not "merged": inside one bucket the streams don't interleave at
+all — each node's values sit together as one contiguous run, and the runs are
+ordered by node id. Across buckets, bucket order always wins. So the whole
+global order is a deterministic, reproducible function of the two values being
+compared, at every separation — there is no point where it becomes fuzzy or
+merely probable. The only thing that is approximate is the relationship
+between this order and *real time*: a node's run can fall in a
+bucket-and-node-id position that a wall clock would not have predicted — and
+`W` is exactly the real-time separation two allocations need before that
+cannot happen: closer together than `W`, a later allocation can still sort
+before an earlier one; that far apart, never.
+
+That mismatch is not something this library trades away by being imprecise —
+it's unavoidable for *any* coordination-free scheme built from timestamps
+alone (§5 of [proof.md](proof.md)). Snowflake and UUIDv7 face exactly the same
+problem; they just don't tell you when it bit them, because neither has
+anything to arbitrate with once two values tie. Snowflake's machine id sits
+below the *whole* timestamp, so its tiebreak survives only within one
+millisecond, and UUIDv7 has no location field at all — its tie is broken by
+bits that carry no meaning. What this layout buys is not a smaller mismatch
+window but a **legible** one: when two identifiers do land out of real-time
+order, ⟨l⟩ still tells you deterministically which allocator's run is which,
+so the disagreement is something you can scan, bound and reconcile instead of
+something you can only wonder about.
+
+Every inversion is between nodes, never within one — that is now Lemma 5′, not
+just an empirical pattern. If you shard by node, each shard is exactly
+ordered, and if a node's contribution to a failover spans multiple buckets, it
+shows up as one contiguous run per bucket rather than one run for the
+whole incident.
 
 ## What this means operationally
 
-| you want to | do this |
-|---|---|
-| a sortable key in a database | use `L` — 8 bytes, strictly ordered, see below |
-| tell two overlapping writers apart | scan each node's run; they do not interleave |
-| range scan by time | widen the range by `W` on both sides |
-| fully sort the stream | buffer `k` entries — but see below |
-| exact ordering | stay within one node, or use `L` |
-| read a timestamp back | `Time()` is accurate to 131 µs, not a precise clock |
+| you want to                               | do this                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| a sortable key in a database              | use `L` — 8 bytes, strictly ordered, see below                   |
+| tell two overlapping writers apart        | scan each node's run per bucket; runs never interleave           |
+| range scan by time                        | widen the range by `W` on both sides                             |
+| fully sort the stream                     | buffer `k` entries — but see below                               |
+| ordering that tracks real allocation time | stay within one node, or use `L`; across nodes, only outside `W` |
+| read a timestamp back                     | `Time()` is accurate to 131 µs, not a precise clock              |
+
+That "ordering that tracks real allocation time" row is worded carefully. The
+key order itself is *always* exact and total — Lemma 5 across buckets, Lemma 5′
+within one — so "exact ordering" is never actually at risk; what's at risk is
+whether that order lines up with the order things really happened in. Reach
+for `L`, or stay on one node, only when the second thing is what you need.
 
 **For a database surrogate key, reach for `guid.L`.** It is 8 bytes — half a
 UUID, a third smaller than `G`, the width of a `BIGINT` — and it is *strictly*
@@ -181,16 +231,44 @@ seconds"), never the entry form.
 
 In rough order of how likely you are to hit it.
 
-**Node id collisions — the real limit on cluster size.** In a `guid.G`, node
-ids are 32 random bits. By the birthday bound you get roughly **65,000
-allocators** before collision probability approaches ½. Two allocators sharing
-a node id, in the same bucket, at the same fine time, with the same counter
-value, produce *the same identifier*. Uniqueness is assumed, not proven — it is
-the one thing here that is not.
+**Inversions inside `W` — the normal case, not a bug.** For two allocations
+less than `W` apart on different nodes, the earlier one can carry the *larger*
+key (Lemma 7); past `W`, never — and never on the same node, at any distance,
+regardless of `W` (Corollary 2 / Lemma 5′). This is not corruption or
+non-determinism: `Before` still gives the same answer to every reader, every
+time (Lemma 1); it's a bounded, reproducible mismatch between key order and
+arrival order, not an unsettled comparison. Where it actually shows up:
 
-If you need more allocators than that, either assign node ids explicitly with
-[`WithNodeID`](../clock.go#L164) instead of randomly, or use `guid.X`, whose 58
-random bits move the bound to about **5.4·10⁸** allocators. That is the reason
+* A range scan over `[t₁, t₂]` can miss an entry that landed just outside the
+  naive boundary, or include one that didn't belong — widen by `W` on both
+  sides (see the table above).
+* Reconstructing a fully time-ordered stream needs a buffer, not a pass-through
+  — `k = ρ·W` entries, per Corollary 1, not zero.
+* During a leader hand-over, the two nodes' runs can appear in the "wrong"
+  real-time order relative to each other — but `𝒍` still says unambiguously
+  which run is whose, so attribution survives even when arrival order does
+  not.
+
+None of this compounds: the effect is per-pair, bounded, and tight at exactly
+`W − 1` (§4.8) — not a growing or cascading problem.
+
+**Node id collisions — the real limit on cluster size, if you randomize.** In a
+`guid.G`, node ids are 32 bits, and the default is to draw them randomly with
+[`WithNodeRandom`](../clock.go#L197). By the birthday bound that gives roughly
+**65,000 allocators** before collision probability approaches ½ — a property
+of random allocation, not of the field width. Two allocators sharing a node
+id, in the same bucket, at the same fine time, with the same counter value,
+produce *the same identifier*. Uniqueness is assumed, not proven — it is the
+one thing here that is not.
+
+The birthday bound goes away if node ids are assigned rather than drawn at
+random — a sequential counter, a MAC-derived value, or any other coordinated
+scheme — since then a collision requires two allocators to be given the same
+id, not merely to guess into the same pool. Assign them explicitly with
+[`WithNodeID`](../clock.go#L164) and the usable space is the full 2³² ≈
+4.3·10⁹, no birthday discount. If you cannot coordinate assignment and must
+stay with random ids, use `guid.X` instead, whose 58 random bits move the
+random-allocation bound to about **5.4·10⁸** allocators. That is the reason
 the wider type exists; being a UUID is the other one.
 
 **Mixed drift settings — silent and nasty.** The drift code is the *top* field.
@@ -202,8 +280,22 @@ as an error.
 
 **Underestimated clock skew.** If your real `ε` exceeds what you assumed, `W`
 is wider than you budgeted. Nothing fails, nothing errors — you just get more
-disorder than planned. Degradation here is graceful, which is also why it can
-go unnoticed.
+inversions than planned, because pairs separated by your configured `W` no
+longer satisfy Lemma 7's hypothesis at the real `ε`. Degradation here is
+graceful, which is also why it can go unnoticed.
+
+Practically: don't guess `ε`, measure it — the worst clock offset actually
+observed across your fleet, not a textbook NTP figure, since the library's
+target deployments (devices behind NAT, VMs resuming from snapshot, hardware
+with no RTC) routinely exceed textbook skew. Then budget margin rather than a
+point estimate: pick a rung with [`DriftOf`](../drift.go#L107) using a
+tolerance well above your measured `ε`, so `Δ` dominates `W = Δ + 2ε` and a
+misestimate in `ε` moves `W` only a little — the default `Drift275s` has two
+and a half minutes of `Δ` to absorb a few extra seconds of misjudged skew;
+`Drift2s` does not. And because the failure is silent, watch for it rather
+than assuming it away: sample `Time()` on incoming identifiers against the
+receiver's wall clock, and treat a growing gap as a sign your assumed `ε` no
+longer matches reality, before it does.
 
 **Hand-written `Chronos`.** If you implement the clock interface yourself,
 `T()` must return a timestamp/counter pair that strictly increases. Return them
@@ -242,5 +334,21 @@ a keyspace uses the same drift.
 
 And the bound is **tight** (§4.8): there is an explicit two-node execution that
 inverts two values `W − 1` apart, so no better constant exists. The only ways
-to reduce disorder are a smaller `Δ` or better clock sync — you cannot analyze
-your way to a smaller number.
+to reduce inversions are a smaller `Δ` or better clock sync — you cannot
+analyze your way to a smaller number.
+
+## Terminology
+
+Terms used above and in other notes.
+
+| term                    | meaning                                                                                                                                                                                            | defined / proven in                                                                         |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **bucket** (⟨E⟩, epoch) | the `Δ`-wide slice of time a value's coarse-time field places it in; two values in different buckets are ordered by bucket alone, regardless of node id                                            | §1.1 of [proof.md](proof.md) (notation); Lemma 5 (epoch dominance)                          |
+| **drift**, `Δ`          | the configured bucket width — a failover budget, not a clock-skew budget — chosen from the ladder via `WithDrift`/`DriftOf`                                                                        | §1.1 of [proof.md](proof.md); "The bucket width is `Δ`" above                               |
+| **node id**, `⟨l⟩`      | the allocator's identity: an element of an ordered space (assigned or randomly seeded), ranking values within one bucket                                                                           | "The one unusual move" above; §1.2 of [proof.md](proof.md)                                  |
+| **run**                 | a maximal contiguous stretch, *within one bucket*, of values belonging to one node; runs from different nodes never interleave inside a bucket, and a run does not extend across a bucket boundary | "The one unusual move" above; Corollary 2 / Lemma 5′ of [proof.md](proof.md)                |
+| **inversion**           | a pair of allocations where the one that happened later in real time sorts *before* the one that happened earlier                                                                                  | Lemma 7 of [proof.md](proof.md); "Inversions inside `W`" above                              |
+| **`W`**                 | the real-time separation, `Δ + 2ε`, beyond which two allocations can never invert; tight, not just an upper bound (§4.8)                                                                           | Lemma 7 of [proof.md](proof.md)                                                             |
+| **`k`**                 | the index-space form of `W`: at peak rate `ρ`, `k = ρ·W` values can appear in one window, so a full re-sort needs a buffer of `k` entries                                                          | Theorem 2 / Corollary 1 of [proof.md](proof.md); "The sort buffer deserves a warning" above |
+| **overlap**             | the real-time interval during which two owners concurrently accept writes for the same key range — the split-brain or hand-over scenario a run's contiguity is meant to make attributable          | [vnode.md](vnode.md), "The shape of the problem"                                            |
+| **ring order**, `<ₖ`    | the order on `⟨l⟩` cut at a ring position `k` rather than at 0, so the owner of `k` is the least element; `Before` is the member of that family cut at 0, which is why it misfires off the origin  | [ring.go](../ring.go); [vnode.md](vnode.md), "Use the vnode token"                          |

@@ -1,7 +1,6 @@
 <p align="center">
   <h3 align="center">GUID</h3>
-  <p align="center"><strong>K-ordered unique identifiers in lock-free and
-decentralized manner for Golang applications</strong></p>
+  <p align="center"><strong>K-ordered unique identifiers in lock-free and decentralized manner for Golang applications</strong></p>
 
   <p align="center">
     <!-- Version -->
@@ -24,10 +23,6 @@ decentralized manner for Golang applications</strong></p>
     <a href="https://coveralls.io/github/fogfish/guid?branch=main">
       <img src="https://coveralls.io/repos/github/fogfish/guid/badge.svg?branch=main" />
     </a>
-    <!-- Go Card -->
-    <a href="https://goreportcard.com/report/github.com/fogfish/guid">
-      <img src="https://goreportcard.com/badge/github.com/fogfish/guid" />
-    </a>
   </p>
 </p>
 
@@ -43,7 +38,7 @@ Package guid implements interface to generate k-ordered unique identifiers in lo
 
 This library aims important objectives:
 
-* **The allocator's location is part of the sort order.** ⟨𝒍⟩ outranks the fine fraction of time, so every node's identifiers occupy a contiguous, individually ordered run of the key space. The topology is readable from the keys themselves.
+* **The allocator's location is part of the sort order.** The location outranks the fine fraction of time, so every node's identifiers occupy a contiguous, individually ordered run of the key space. The topology is readable from the keys themselves.
 * IDs allocation does not require centralized authority, coordination between nodes, or a synchronized clock.
 * IDs are suitable for partial event ordering in distributed environment and helps on detection of causality violation.
 * IDs are roughly sortable by allocation order ("time").
@@ -64,8 +59,6 @@ Most of identity schemas uses monotonically increasing clock (timestamp) to roug
 
 Neither Snowflake nor UUIDv7 can express this. Snowflake carries a machine id but places it below the *whole* timestamp, so grouping by node survives only within one millisecond. UUIDv7 has no location fraction at all — after the 48-bit millisecond it is entropy. The property is not a matter of tuning; the field has to be positioned to say it.
 
-⟨𝒅⟩ is how wide that window is.
-
 ## Identity Schema
 
 A fixed size of 96-bit is used to implement identity schema
@@ -76,7 +69,7 @@ A fixed size of 96-bit is used to implement identity schema
    ⟨𝒅⟩        ⟨𝒕⟩                ⟨𝒍⟩         ⟨𝒕⟩     ⟨𝒔⟩
 ```
 
-↣ ⟨𝒕⟩ is 47-bit UTC timestamp with millisecond precision. It is derived from nanosecond UNIX timestamp by shifting it by 17 bits (time.Now().UnixNano() << 17). The library is able to change the base timestamp to any value in-order to address Year 2038 problem.
+↣ ⟨𝒕⟩ is 47-bit UTC timestamp with a resolution of 131 µs — one tick is 2¹⁷ ns. It is derived from the nanosecond UNIX timestamp by shifting it right by 17 bits (`time.Now().UnixNano() >> 17`). The field spans 2⁴⁷ ticks of 2¹⁷ ns — 2⁶⁴ ns, about 584 years — so measured from the UNIX epoch it runs to the year 2555. The effective ceiling is earlier and comes from Go rather than from the schema: `UnixNano` is undefined beyond 2262, so ⟨𝒕⟩ never uses more than 46 of its 47 bits. A deployment that needs a different time base supplies its own ticker with `guid.WithClock(...)`, which also gives that clock a private ⟨𝒕,𝒔⟩ sequence.
 
 ↣ ⟨𝒍⟩ is 32-bits node/allocator identifier. It is allocated randomly to each node using cryptographic random generator or application provided value. The node identity has higher sorting priority than the low bits of the timestamp, which is what makes each allocator's output a contiguous, exactly ordered run of the key space. The random allocation give an application ability to introduce about 65K allocators before it meets a high probability of collisions.
 
@@ -86,16 +79,16 @@ A fixed size of 96-bit is used to implement identity schema
 
 **Read Δ as a failover budget, not as a clock-skew budget.** It has to cover the interval between a silent failure and the moment the cluster has converged on a new owner — because that is the interval during which two allocators write to the same range and you need their output kept apart:
 
-| constant | Δ | covers |
-|---|---|---|
-| `guid.Drift1ms` | 1.05 ms | ordering first — the class Snowflake and UUIDv7 occupy, for clocks that are actually synchronized |
-| `guid.Drift16ms` | 16.8 ms | one datacenter, disciplined NTP |
-| `guid.Drift268ms` | 268 ms | multiple regions synchronized over a WAN |
-| `guid.Drift2s` | 2.15 s | consumer devices with working time sync |
-| `guid.Drift17s` | 17.2 s | lease expiry, fast failure detectors |
-| `guid.Drift275s` *(default)* | 274.9 s | gossip / phi-accrual failure detection, unmanaged clocks |
-| `guid.Drift1099s` | 1099 s | slow membership convergence, cross-region hand-over |
-| `guid.Drift4398s` | 4398 s | human-in-the-loop failover |
+| constant                     | Δ       | covers                                                                                            |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `guid.Drift1ms`              | 1.05 ms | ordering first — the class Snowflake and UUIDv7 occupy, for clocks that are actually synchronized |
+| `guid.Drift16ms`             | 16.8 ms | one datacenter, disciplined NTP                                                                   |
+| `guid.Drift268ms`            | 268 ms  | multiple regions synchronized over a WAN                                                          |
+| `guid.Drift2s`               | 2.15 s  | consumer devices with working time sync                                                           |
+| `guid.Drift17s`              | 17.2 s  | lease expiry, fast failure detectors                                                              |
+| `guid.Drift275s` *(default)* | 274.9 s | gossip / phi-accrual failure detection, unmanaged clocks                                          |
+| `guid.Drift1099s`            | 1099 s  | slow membership convergence, cross-region hand-over                                               |
+| `guid.Drift4398s`            | 4398 s  | human-in-the-loop failover                                                                        |
 
 The four sub-second rungs are the interesting new range: at Δ = 1.05 ms the schema is in the same ordering class as Snowflake and UUIDv7, and ⟨𝒅⟩ becomes a dial between *timestamp-primary* and *location-primary* rather than a fixed opinion. Note what the low rungs really cost, though — the window is Δ + 2ε, so below a second or so it is the quality of your clocks, not the setting, that decides the ordering.
 
@@ -110,8 +103,9 @@ clock := guid.NewClock(guid.WithDrift(guid.Drift16ms))
 clock := guid.NewClock(guid.WithDrift(guid.DriftOf(60 * time.Second)))
 ```
 
-↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happens during single millisecond or when the clock set backwards. The 14-bit value allows to have about 16K allocations per tick of ⟨𝒕⟩ and over 100M per second on single node. Each instance of application process runs a unique sequence of integers. The implementation ensures that the same integer is not returned more than once on the current
-process. Restart of the process resets the sequence.
+↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happen during a single tick of ⟨𝒕⟩ — 131 µs — or when the clock is set backwards. The 14-bit value allows about 16K allocations per tick, a ceiling of 1.25·10⁸ per second per process. Read that as the saturation point rather than as a throughput figure: it is about the cost of the atomic increment itself, so a process cannot approach it while doing anything with the identifiers it allocates, and crossing it produces run-ahead rather than collisions — ⟨𝒕⟩ advances past the wall clock and the gap closes on its own once the burst ends. [§3.6 of the proof](doc/proof.md) has the rates.
+
+The sequence is **process-wide**, not per-allocator: every clock built on the default ticker shares one, so values allocated across several instances of `Chronos` in a process stay unique and each stays exactly ordered (`guid.WithClock` is the exception — a custom ticker gets a private sequence). It is *not* unique between processes and is not what makes identifiers globally unique: two processes allocating in the same tick produce the same ⟨𝒕,𝒔⟩, and it is ⟨𝒍⟩ that keeps their identifiers apart. Within one process the implementation ensures that the same integer is not returned more than once. Restart of the process resets the sequence.
 
 ⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as a single atomic step, so that the pair ⟨𝒕,𝒔⟩ strictly increases with every allocation. ⟨𝒔⟩ counts within one tick of ⟨𝒕⟩ and restarts when the clock ticks; an allocator that exhausts a tick carries into the next one rather than folding ⟨𝒔⟩ back to zero. This makes values allocated by a single process ordered exactly as they were allocated — at any allocation rate, and even across a clock that is stepped backwards, where ⟨𝒕⟩ holds its high water mark until real time catches up. A process that saturates the allocator — a loop that allocates and discards, nothing else — makes ⟨𝒕⟩ run ahead of the wall clock; the ordering is unaffected and the gap closes on its own once the loop stops. [§3.6 of the proof](doc/proof.md) derives the rates, for readers who need `Time` to track real time under synthetic load.
 
@@ -137,11 +131,11 @@ The same schema is also defined at 128 bits, where ⟨𝒍⟩ is 58 bits wide an
 
 The library defines three types, each occupying exactly the bits its schema needs, so that an application storing millions of identifiers pays for nothing it does not use.
 
-| type | schema | size | ⟨𝒍⟩ | alignment | allocator |
-|---|---|---|---|---|---|
-| `guid.X` | ⟨𝒅,𝒕,𝒍,𝒔⟩ | **16 bytes** | 58 bit | 1 | `guid.NewX(clock)` |
-| `guid.G` | ⟨𝒅,𝒕,𝒍,𝒔⟩ | **12 bytes** | 32 bit | 1 | `guid.NewG(clock)` |
-| `guid.L` | ⟨𝒅,𝒕,𝒔⟩   | **8 bytes**  | —      | 8 | `guid.NewL(clock)` |
+| type     | schema    | size         | ⟨𝒍⟩    | alignment | allocator          |
+| -------- | --------- | ------------ | ------ | --------- | ------------------ |
+| `guid.X` | ⟨𝒅,𝒕,𝒍,𝒔⟩ | **16 bytes** | 58 bit | 1         | `guid.NewX(clock)` |
+| `guid.G` | ⟨𝒅,𝒕,𝒍,𝒔⟩ | **12 bytes** | 32 bit | 1         | `guid.NewG(clock)` |
+| `guid.L` | ⟨𝒅,𝒕,𝒔⟩   | **8 bytes**  | —      | 8         | `guid.NewL(clock)` |
 
 All three carry the same fractions in the same order, and share the same drift ladder, clock and sequencer. They differ only in how much room is left for the node identity, which is also what separates their use cases.
 
@@ -172,17 +166,15 @@ var uid guid.X
 err := uid.FromString("06377f2a-0cb8-8a3f-b000-0000000003e9")
 ```
 
-This is the one place the schema's cardinal rule can be broken by a typo — a value of the wrong type decoded into a keyspace is unrecoverable — so it is not left to a suffix on a function name that the reader has to notice. There is no `FromStringG` to write instead of `FromStringX`; `g.FromString` reads a `G` because `g` is a `G`.
-
 Every accessor has its inverse on the same type:
 
-| encode | decode |
-|---|---|
-| `uid.Bytes()` | `uid.FromBytes(b)` |
-| `uid.String()` | `uid.FromString(s)` |
-| `uid.Base62()` | `uid.FromBase62(s)` |
-| `uid.Split(n)` | `uid.Fold(n, b)` |
-| `uid.Epoch()` | `uid.FromTime(clock, t)` |
+| encode         | decode                   |
+| -------------- | ------------------------ |
+| `uid.Bytes()`  | `uid.FromBytes(b)`       |
+| `uid.String()` | `uid.FromString(s)`      |
+| `uid.Base62()` | `uid.FromBase62(s)`      |
+| `uid.Split(n)` | `uid.Fold(n, b)`         |
+| `uid.Epoch()`  | `uid.FromTime(clock, t)` |
 
 Casts read in the direction of the assignment:
 
@@ -205,14 +197,14 @@ All three types implement `encoding.TextMarshaler`, `TextUnmarshaler`, `BinaryMa
 
 Its limit is in the name: a local value is unique within the allocator that issued it. Use it where the surrounding context already disambiguates — a per-tenant or per-partition key space, a single writer, or a row that already carries the node — and use `guid.G` where it does not.
 
-**Reach for `guid.G` when identifiers are allocated by many uncoordinated nodes** and you want the topology in the key: a contiguous, exactly ordered run per allocator, so that overlapping writers can be told apart and reconciled. That is what the extra 4 bytes buy. Its ⟨𝒍⟩ is 32 bits, so randomly allocated node identities meet a birthday bound at about 65 000 allocators.
+**Reach for `guid.G` when identifiers are allocated by many uncoordinated nodes** and you want the topology in the key: a contiguous, exactly ordered run per allocator, so that overlapping writers can be told apart and reconciled. That is what the extra 4 bytes buy. Its ⟨𝒍⟩ is 32 bits, so randomly allocated node identities meet a birthday bound at about 65 000 allocators but using assignments widen it up to 2³².
 
 **Reach for `guid.X` when the identifiers leave Go, or when there are more allocators than 32 bits of ⟨𝒍⟩ can keep apart.** Its 58-bit ⟨𝒍⟩ moves the birthday bound to about 5.4·10⁸, which takes node collision out of the set of things an operator has to think about — and uniqueness, not ordering, is this library's real exposure: the ordering is machine-checked, the node distinctness is assumed. Against UUIDv7, which it costs exactly as much to store, it adds strict ordering *within* a millisecond, topology in the key, 131 µs time resolution, exact intra-node sequencing and a proof. Against UUIDv7 it also asks for two things UUIDv7 never asks for — a drift held constant across the cluster and across the lifetime of the data, and node identities that stay distinct. Both are easy on day one and are the shape of a year-three incident; if a sortable primary key is all you need, UUIDv7's zero configuration and unconditional uniqueness are the better trade.
 
-| situation | type |
-|---|---|
-| sortable key, one allocator or a disambiguating context | `guid.L` — 8 B |
-| many uncoordinated allocators, storage footprint matters | `guid.G` — 12 B |
+| situation                                                    | type                    |
+| ------------------------------------------------------------ | ----------------------- |
+| sortable key, one allocator or a disambiguating context      | `guid.L` — 8 B          |
+| many uncoordinated allocators, storage footprint matters     | `guid.G` — 12 B         |
 | many uncoordinated allocators, interop or node count matters | `guid.X` — 16 B, a UUID |
 
 ```go
@@ -228,34 +220,25 @@ x.String()                   // "0198c4f1-a35c-8b7e-b2a0-91d5e0c00001"
 err := x.FromString(s)       // the decoder is a method on what it builds
 ```
 
+### Comparing on a ring
+
+`Before` ranks ⟨𝒍⟩ with `<`, whose least element is `0`. A consistent hashing ring has no least element — it has one order per cut point, and the one a key 𝒌 means is `a <𝒌 b ⟺ (a − 𝒌) mod 2ᴺ < (b − 𝒌) mod 2ᴺ`, a strict total order for every fixed 𝒌. `Before` is the member of that family cut at the origin, so on a ring it answers for 𝒌 = 0 whatever key was asked about: it agrees with the successor list only where that list does not wrap the origin, and misfires on `(N−1)/M` of the key space for `M` addresses and replication factor `N` — two thirds of it with three nodes.
+
+`OrdRingG` and `OrdRingX` are that order, cut where you ask:
+
+```go
+ord := guid.OrdRingG(key >> 32)   // the order cut at this key
+slices.SortFunc(uids, ord.Compare)   // uids[0] belongs to the primary for key
+ord.Before(a, b)                     // and the pairwise form
+```
+
+The primary for 𝒌 is by construction the least element of `<𝒌`, at every key and for any placement of tokens, so the misfire is zero rather than small. `OrdRingG(0)` — the zero value — is exactly `Before`.
+
+It costs what `Before` does not. `Before` is two word comparisons, and the byte order of a stored value *is* that order, so an external index sorts correctly without decoding; ring order has to read ⟨𝒍⟩ out of the middle of the value — at the default rung it straddles the word boundary of a `G` — rotate it, and compare it apart from the fields around it, which no index can do, and which cannot be folded into storage because 𝒌 varies per query. It is meant for conflict resolution over the few values contending for one key, not for the index path: scanning does not need it, since a node's run stays contiguous inside an epoch under `Before` already and rotation permutes runs without splitting them. See [doc/vnode.md](doc/vnode.md).
+
 ## Migrating from v2
 
-v3 is a compatibility break. The bit layout of the identifiers is unchanged — values encoded by v2 decode in v3 and sort the same way — but the Go types and the API around them are new.
-
-| v2 | v3 |
-|---|---|
-| `guid.K` (one 128-bit struct for both shapes) | `guid.G` (12 bytes) and `guid.L` (8 bytes), distinct types |
-| `guid.G(clock)` / `guid.L(clock)` | `guid.NewG(clock)` / `guid.NewL(clock)` |
-| `guid.Z(clock)` | `guid.ZeroG(clock)` / `guid.ZeroL(clock)` |
-| `guid.Time(uid)`, `guid.Node(uid)`, `guid.Seq(uid)` | `uid.Time()`, `uid.Node()`, `uid.Seq()` |
-| `guid.Before(a, b)`, `guid.After`, `guid.Equal`, `guid.Diff` | `a.Before(b)`, `a.After(b)`, `a.Equal(b)`, `a.Diff(b)` |
-| `guid.EpochT(uid)`, `guid.EpochI(uid)` | `uid.Epoch()` — one method, see below |
-| `guid.String(uid)`, `guid.Bytes(uid)`, `guid.Base62(uid)` | `uid.String()`, `uid.Bytes()`, `uid.Base62()`, each with an inverse `uid.FromString(s)`, `uid.FromBytes(b)`, `uid.FromBase62(s)` |
-| `guid.FromL(clock, uid)` / `guid.ToL(uid)` | `g.FromL(clock, l)` / `l.FromG(g)` |
-| `guid.FromBytes(b)` (dispatched on length) | `g.FromBytes(b)` / `l.FromBytes(b)` — a method on the destination |
-| `guid.FromBase62(s)` | `g.FromBase62(s)` / `l.FromBase62(s)` |
-| `guid.FromT(t)` | `g.FromTime(clock, t)` / `l.FromTime(clock, t)` |
-| `Chronos.L()` | `Chronos.Node()` — renamed, `L` is now a type |
-| — | `Chronos.Order()` — new, the direction of the clock's time domain; `FromTime` needs it to place an instant into the keyspace |
-| `guid.G(clock, drift...)`, `guid.Z(drift...)`, `guid.FromT(t, drift...)` | drift moved onto the clock: `guid.NewClock(guid.WithDrift(d))`, `Chronos.Drift()` |
-| `guid.WithUnique(...)` | removed, see below |
-
-Four behavioural changes come with it:
-
-* **⟨𝒕⟩ and ⟨𝒔⟩ are always allocated as a pair.** `WithUnique` supplied ⟨𝒔⟩ from a generator independent of ⟨𝒕⟩, which opts out of the coupling that makes values sort in allocation order; it was deprecated in v2 and is gone in v3. `NewClockMock` still pins ⟨𝒕,𝒔⟩ to ⟨0,0⟩ for tests that need a fixed value.
-* **⟨𝒅⟩ drift is configured on the clock, not per allocation.** v2 accepted an optional `drift ...time.Duration` on every allocator, while correctness requires the drift to be constant across a keyspace — ⟨𝒅⟩ is the most significant faction, so mixing drifts sorts values by their configuration instead of their time. v3 binds it to `Chronos` with `guid.WithDrift(...)`, which makes the mixed keyspace unrepresentable within one clock. The ladder was also re-based: `guid.WithDrift` now takes a `guid.Drift` rung rather than a duration — use `guid.DriftOf(d)` to convert one — and four of its eight rungs were moved below one second, down to Δ = 1.05 ms. The old floor of 34.36 s was an artifact of assembling the value with hand-placed shifts, which required ⟨𝒍⟩ to keep `𝑫 - 18` bits above the machine word boundary; the fractions are now placed positionally, so the schema's own range is reachable.
-* **`Epoch` reports wall clock time, whichever way the clock runs.** v2 offered `EpochT` and `EpochI`, and the caller had to know which one matched the clock that allocated the value — picking wrong returned a date centuries off, silently. The direction of a clock is a decision about how the keyspace is laid out, not a fact about the event, so it must not change the reported instant. v3 has a single `uid.Epoch()`: it recovers the domain from ⟨𝒕⟩ itself, since a descending tick is `MaxUint64 - UnixNano` and therefore `>= 2^63` exactly while an ascending one is below it. The discrimination inverts on 2262-04-11, the day `int64` nanoseconds overflow, so it expires with the return type rather than before it. Ordering questions are answered by `Before`, `After` and `Time()` as before.
-* **JSON no longer carries a shape marker.** v2 prefixed a local value with `*` so that a `guid.K` could round-trip as either shape. The types are distinct now, so both marshal to a plain 16-character string. v2 JSON containing `*`-prefixed values does not decode.
+v3 is a compatibility break — new types, a re-based drift ladder, and a `guid.G` decoded with plain `FromString`/`FromBase62` will silently misread ⟨𝒍⟩ and ⟨𝒕⟩ for a v2 value. Use [`guid.FromV2(isBase62, s)`](v2.go) instead. The full API mapping and the reasoning behind each behavioural change are in [CHANGELOG.md](CHANGELOG.md#v3).
 
 ## Getting started
 
@@ -313,12 +296,12 @@ The library [api specification](http://godoc.org/github.com/fogfish/guid) is ava
 go run ./examples/guid -x -n 42 -t 5ms -c 20
 ```
 
-| flag | |
-|---|---|
-| `-l` `-g` `-x` | which type to allocate; `-g` by default, at most one |
-| `-n` | node identity ⟨𝒍⟩, random when not given |
-| `-t` | sleep a random interval in (0, t] between allocations |
-| `-c` | how many to allocate, `0` for no limit |
+| flag           |                                                       |
+| -------------- | ----------------------------------------------------- |
+| `-l` `-g` `-x` | which type to allocate; `-g` by default, at most one  |
+| `-n`           | node identity ⟨𝒍⟩, random when not given              |
+| `-t`           | sleep a random interval in (0, t] between allocations |
+| `-c`           | how many to allocate, `0` for no limit                |
 
 Only the identifiers go to stdout, so the output pipes. Run two instances side by side with different `-n` to see the property the schema exists for — each allocator's output is a contiguous, individually ordered run of the key space:
 

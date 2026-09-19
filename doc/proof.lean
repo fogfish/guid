@@ -182,6 +182,28 @@ theorem pack_lt_of_epoch_lt {N D d E l x s E' l' x' s' : Nat}
     Nat.lt_of_lt_of_le (digit_lt h1 hx) (Nat.le_add_right _ _)
   exact Nat.lt_of_lt_of_le (digit_lt h2 hs) (Nat.le_add_right _ _)
 
+/-- **Intra-epoch structure** (`prove.md`, Lemma 5′).  Within one epoch a
+    smaller node identity makes a smaller identifier, whatever the low clock
+    bits and the sequence are.
+
+    `l` is an element of an ordered space, not an opaque tag: the schema ranks
+    by `<` on it.  Together with `pack_lt_of_epoch_lt` above and
+    `pack_le_of_suffix_le` below, this says the order inside an epoch is the
+    strict lexicographic order on `(l, xlo, s)` — total, and determined by the
+    two values alone.  Nothing here is weakened by *how* `l` was assigned;
+    a random draw picks which element of the ordered space a node occupies,
+    it does not make the space unordered. -/
+theorem pack_lt_of_node_lt {N D d E l x s l' x' s' : Nat}
+    (hx : x < 2 ^ D) (hs : s < 2 ^ 14) (hl : l < l') :
+    pack N D d E l x s < pack N D d E l' x' s' := by
+  have h1 : (d * 2 ^ (47 - D) + E) * 2 ^ N + l
+          < (d * 2 ^ (47 - D) + E) * 2 ^ N + l' :=
+    Nat.add_lt_add_left hl _
+  have h2 : ((d * 2 ^ (47 - D) + E) * 2 ^ N + l) * 2 ^ D + x
+          < ((d * 2 ^ (47 - D) + E) * 2 ^ N + l') * 2 ^ D + x' :=
+    Nat.lt_of_lt_of_le (digit_lt h1 hx) (Nat.le_add_right _ _)
+  exact Nat.lt_of_lt_of_le (digit_lt h2 hs) (Nat.le_add_right _ _)
+
 /-- Equal prefix: identifiers of the same node in the same epoch are ordered by
     `(xlo, s)` alone.  This is the step behind Corollary 2 of `prove.md` — the
     per-node stream is exactly sorted. -/
@@ -500,6 +522,7 @@ example : sane.A (sane.k + 1 - sane.k) ≤ sane.A (sane.k + 1) :=
 #print axioms Guid.ladder_le
 #print axioms Guid.ladder_mono
 #print axioms Guid.pack_lt_of_epoch_lt
+#print axioms Guid.pack_lt_of_node_lt
 #print axioms Guid.pack_le_of_suffix_le
 #print axioms Guid.sane
 #print axioms Guid.packL_lt_of_lt

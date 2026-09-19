@@ -14,9 +14,9 @@ implementation.
 
 Owners `A`, `B`, `C` hold addresses on a ring; each key is owned by the `N`
 nodes clockwise from it. A node fails silently, or a partition splits the
-cluster, and for some interval two owners accept writes for the same range.
-When the cluster converges there are three questions, and they are answered in
-three different places:
+cluster, and for some interval two owners accept writes for the same range —
+call that interval the **overlap**. When the cluster converges there are three
+questions, and they are answered in three different places:
 
 1. **Who wrote what?** Which owner produced a given record, and what is the
    complete set each of them produced during the overlap. **The layout answers
@@ -43,8 +43,8 @@ one of the two writes without ever reporting that there were two.
 ## What the layout buys
 
 `⟨l⟩` sits *inside* the timestamp: coarse time above it, fine time below. So
-inside one epoch bucket of width `Δ` the sort order is grouped by allocator,
-and each group is exactly ordered
+inside one epoch bucket of width `Δ` the sort order is grouped by allocator
+into a contiguous **run**, and each run is exactly ordered
 ([Corollary 2](proof.md#47-corollary-2-intra-node-order-is-exact)).
 
 ```
@@ -80,20 +80,28 @@ Both choices keep the two split-brain writers distinct, because a successor
 serves the range from its own ring position rather than assuming the failed
 node's identity. They differ in whether the sort order means anything.
 
-A common tie-break is *lowest `⟨l⟩` wins*. That is a **global** rule. *The
-primary wins* is a **per-key** rule. They coincide only when the key's
-preference list does not wrap the ring's origin, and the fraction of the ring
-where they coincide is `(M−N+1)/M` for `M` distinct addresses and replication
-factor `N`:
+A common tie-break is *lowest `⟨l⟩` wins*, evaluated with `Before`. **That is
+the wrong comparison, and the error is not small.** `Before` orders `⟨l⟩` with
+`<`, whose least element is `0`. A ring has no least element — it has one order
+per cut point, and the one a key `k` means is
 
-| distinct `⟨l⟩` on the ring | `N` | primary is the lowest for |
+```
+a <ₖ b  ⟺  (a − k) mod 2ᴺ  <  (b − k) mod 2ᴺ
+```
+
+`<` is the member of that family cut at the origin, so it answers for `k = 0`
+whatever key you actually asked about. It is right only where the key's
+preference list does not wrap the origin — a fraction `(M−N+1)/M` of the ring
+for `M` distinct addresses and replication factor `N`:
+
+| distinct `⟨l⟩` on the ring | `N` | `Before` agrees with the primary for |
 |---|---|---|
 | 3 | 3 | 33 % |
 | 10 | 3 | 80 % |
 | 256 | 3 | 99 % |
 | 25 600 | 3 | 99.99 % |
 
-With three physical nodes the rule misfires on two thirds of the key space:
+With three physical nodes it misfires on two thirds of the key space:
 
 ```
 key in seg A: pref=[B C A] primary=B lowest=A <- successor beats primary
@@ -102,14 +110,42 @@ key in seg C: pref=[A B C] primary=A lowest=A ok
 ```
 
 `A` wins every conflict, including for keys it holds only as a second
-successor. Put the **vnode token** in `⟨l⟩` and `M` becomes the number of
-vnodes rather than the number of hosts, which moves the misfire from two thirds
-of the ring to a rounding error.
+successor.
+
+**Compare with the ring order instead and the error is zero**, at every key and
+for any placement of tokens — the primary for `k` is by construction the least
+element of `<ₖ`:
+
+```go
+ord := guid.OrdRingG(key >> 32)   // the order cut at this key
+slices.SortFunc(uids, ord.Compare)   // uids[0] belongs to the primary
+```
+
+There is no contradiction between the three segments above, and no topological
+obstacle to getting them all right. `B <ₖ₁ C <ₖ₁ A` and `C <ₖ₂ A <ₖ₂ B` are
+statements about two *different* relations, each a strict total order. Only
+collapsing them onto one relation — which is what `Before` does — produces the
+cycle `B < C < A < B` and with it the misfire.
+
+So the table above is the error rate of the wrong comparator, not a limit to
+engineer around. It matters only if you compare with `Before` anyway, which is
+a reasonable choice when the tie-break has to be computable by a system that
+cannot call into this library — a SQL `ORDER BY`, a KV store's native
+collation. **That** is the trade: `Before` is sortable by anything and wrong on
+`(N−1)/M` of the ring; `<ₖ` is exactly right and computable only in process,
+see *What this costs* in [ring.go](../ring.go).
 
 If the tie-break is only required to be *deterministic* — every replica
 computing the same winner, with no claim that the winner is the owner — then
-`M` does not matter and either choice works. Decide which of the two you mean
-before you rely on it.
+neither `M` nor the comparator matters, and `Before` is the cheaper choice.
+Decide which of the two you mean before you rely on it.
+
+Putting the **vnode token** in `⟨l⟩` rather than the host address remains the
+right call either way, but for the reason this section opened with rather than
+for the misfire rate: `<ₖ` orders by `⟨l⟩`, so `⟨l⟩` has to *be* ring position
+for that order to mean ring adjacency. A host address gives you a well-defined
+order over something that is not the topology, and `<ₖ` will sort it perfectly
+and tell you nothing.
 
 ### Top-align a token wider than `⟨l⟩`
 
@@ -175,9 +211,14 @@ Two consequences follow from `Δ` bounding the grouping rather than the
 ordering:
 
 **The tie-break is `(bucket, owner)`, not `owner`.** Inside one bucket `⟨l⟩`
-decides; across a boundary time decides and the higher address can win. So
+decides; across a boundary time decides and the later owner can win. So
 *lowest wins* is stable only while `Δ` comfortably exceeds the overlap. At
 `Drift17s` with a 300 s overlap the winner alternates 19 times.
+
+This one is **not** fixed by the ring order. `<ₖ` rotates `⟨l⟩` and nothing
+above it, and `⟨𝑬⟩` outranks `⟨l⟩` under either comparator — so a bucket
+boundary resets the winner whichever one you use. Sizing `Δ` against the
+overlap is the only remedy, exactly as above.
 
 **A wider `Δ` costs ordering elsewhere.** Everything the cluster allocates
 within `W = Δ + 2ε` is ordered by owner rather than by time, and a time range
@@ -274,10 +315,14 @@ replacing one — not a reason to keep them out of it. The vector's dominance
 test is what separates "B wrote after A" from "A and B wrote in a partition";
 the identifiers are what each component of that test compares.
 
-**Ownership authority.** *Lowest `⟨l⟩` wins* selects an owner, not the primary,
-outside the fraction of the ring tabulated above. If the recovery path treats
-the winner as authoritative, record the intended owner rather than inferring it
-from sort position.
+**Ownership authority — if you compare with `Before`.** *Lowest `⟨l⟩` wins*
+selects an owner, not the primary, outside the fraction of the ring tabulated
+above. Compared with `OrdRingG(key)` it *does* select the primary, at every
+key, so sort position recovers ownership exactly. The caveat that remains is
+narrower: the identifier records the owner that allocated it, which is the
+owner the ring had *then*. If membership changed between the write and the
+read, sort position answers for the old ring, and only a recorded intent
+answers for the one you are recovering into.
 
 **Real-time order across owners.** Inside `W = Δ + 2ε` the order you read back
 is ring order, deliberately. A write made later can sort earlier. This is not a
@@ -298,3 +343,6 @@ order without coordination.
 - [ ] the ticker is floored at the stored high-water plus one tick on startup
 - [ ] conflict resolution is the version vector's, with the identifier as
       tie-break only
+- [ ] the tie-break compares with `OrdRingG`/`OrdRingX` cut at the key,
+      not with `Before` — or `Before` is used deliberately, knowing it answers
+      for the origin and misfires on `(N−1)/M` of the ring

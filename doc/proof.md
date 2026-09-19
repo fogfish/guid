@@ -96,6 +96,41 @@ longer spans the range of the clock, which caps the ladder at `𝑫 = 25`. Below
 > 1 never depended on it; `makeG` now places each fraction at the bit position
 > the schema gives it, and the floor is gone with the shifts that caused it.
 
+**`𝒍` is drawn from a linearly ordered space, and the schema ranks by that
+order.** This is a modelling decision worth making explicit, because every
+result about the interior of an epoch depends on it. The node identity is not
+an opaque tag that merely has to *differ* between allocators: it is an element
+of `𝑳 = {0,…,2^𝑵−1}` under `<`, and Lemma 2 below makes that order a component
+of the order on identifiers. A deployment is expected to take `𝒍` from a space
+it already orders — position on a consistent-hash ring, a shard or partition
+number, an index into a membership list — through
+[`WithNodeID`](../clock.go#L164), so that adjacency in the key space *is*
+adjacency in the topology.
+
+Two consequences matter for reading Part II, and they are easy to conflate.
+
+*Assigning `𝒍` is management plane; allocating a value is data plane.* The
+lock-free, coordination-free claim of this note is about **allocation**:
+producing an identifier costs one atomic increment and consults nobody (§3.2).
+Fixing `𝒍` is a separate and earlier act, performed once per allocator, outside
+the allocation path, by whatever already decides cluster membership. It may use
+as much coordination as it likes — a hash ring, a config file, a lease, an
+operator typing a number — without touching any theorem below, because no
+theorem below runs at that time. The split is the ordinary one between a
+control plane that hands out identities and a data plane that then runs without
+asking it anything.
+
+*Randomizing `𝒍` is a seeding policy, not a different schema.*
+[`WithNodeRandom`](../clock.go#L197) is the default because it discharges (A7)
+with no infrastructure at all. It selects *which* element of `𝑳` an allocator
+occupies; it does not make `𝑳` unordered, nor `Before` non-deterministic, nor
+the interior of an epoch unordered. Every result in Parts I and II holds
+verbatim under either policy, and Lemma 5′ is stated without reference to one.
+What the choice does change is two things outside the order: whether the
+induced ranking of nodes carries meaning — assigned `𝒍` mirrors the topology, a
+random `𝒍` gives an arbitrary but thereafter fixed permutation — and whether
+(A7) is guaranteed or merely probable, which is the subject of §5.
+
 ### 1.2 Proposition 1 (global layout)
 
 For `𝑫 ∈ {0,…,25}`, `𝒅 < 2³`, `𝒍 < 2³²`, `𝒔 < 2¹⁴`:
@@ -349,7 +384,12 @@ discuss when it fails.
   all real times `τ`, for a common bound `ε`.
 * **(A6) Rate bound.** At most `𝒌` allocations occur cluster-wide in any
   half-open real-time window of length `𝑾 = Δ + 2ε`.
-* **(A7) Distinct allocators.** Distinct processes use distinct `𝒍`.
+* **(A7) Distinct, ordered, statically assigned identities.** `𝒍` is an element
+  of the linearly ordered space `𝑳 = {0,…,2^𝑵−1}` (§1.1), fixed once per
+  allocator before it allocates and constant thereafter, and distinct processes
+  use distinct `𝒍`. *How* the assignment is made is out of scope — it is
+  management plane, and the results below use only the fact that it happened,
+  never the policy that made it happen.
 
 Assumptions (A5)–(A7) concern the cluster and are needed only for Part II.
 Part I needs (A1) and (A2) alone. In particular it needs **no** assumption
@@ -716,6 +756,50 @@ This is *the* structural fact of the schema: the node identity outranks the low
 `𝑫` bits of the clock, but nothing outranks the epoch. Clock disagreement can
 permute values only *inside* an epoch.
 
+### 4.2′ Lemma 5′ (intra-epoch structure)
+
+Lemma 5 is the negative half — what cannot be overturned. This is the positive
+half: what the order *is* where Lemma 5 stops applying.
+
+*Assume (A1), (A7). If `𝑬(𝒖) = 𝑬(𝒗)` then*
+
+```
+  ⟦𝒖⟧ < ⟦𝒗⟧   ⟺   (𝒍ᵤ, 𝒙ₗᵤ, 𝒔ᵤ)  <ₗₑₓ  (𝒍ᵥ, 𝒙ₗᵥ, 𝒔ᵥ) .
+```
+
+*In particular the values of one epoch are **totally ordered**, and they are
+grouped into contiguous runs — one per allocator, the runs ordered by `𝒍`.*
+
+*Proof.* With `𝒅` equal by (A1) and `𝑬` equal by hypothesis, the two leading
+fields contribute the same value to both packings, so by Lemma 2 the
+lexicographic comparison on `(𝒅, 𝑬, 𝒍, 𝒙ₗ, 𝒔)` reduces to the lexicographic
+comparison on the suffix `(𝒍, 𝒙ₗ, 𝒔)`; that reduction is the equivalence.
+Totality is then totality of `<ₗₑₓ` on a product of linear orders, which `𝑳` is
+by (A7). For contiguity, let `𝒍ᵤ = 𝒍ᵥ` and `⟦𝒖⟧ < ⟦𝒘⟧ < ⟦𝒗⟧`. By Lemma 5,
+`𝑬(𝒘) < 𝑬(𝒖)` would force `⟦𝒘⟧ < ⟦𝒖⟧` and `𝑬(𝒘) > 𝑬(𝒗)` would force
+`⟦𝒗⟧ < ⟦𝒘⟧`, so `𝒘` shares the epoch and the equivalence applies to it, giving
+`𝒍ᵤ ≤ 𝒍_𝒘 ≤ 𝒍ᵥ = 𝒍ᵤ`. ∎
+
+`Guid.pack_lt_of_node_lt` is the forward direction machine-checked, and like
+Lemma 5 it is stated over a node of `𝑵` bits, so it covers both types.
+
+It is worth being explicit about what Lemmas 5 and 5′ jointly rule out, because
+the negative framing of §4.4–§4.6 invites a stronger reading than the theorems
+support. Across epochs, time decides. Within an epoch, `𝒍` decides — and
+*decides* is the operative word. The order is total, and it is a function of
+the two values alone: by Lemma 1, `Before` reads only the identifiers, so any
+two of them compare the same way for every observer, at every separation, on
+every machine. **No result in Part II says that identifiers allocated close
+together are unordered, ambiguously ordered, or ordered differently by
+different readers.** What §4.4–§4.6 bound is a different quantity entirely: how
+far this fixed order can diverge from the order of allocation in real time.
+
+Nor does the seeding policy enter. Lemma 5′ never asks where `𝒍` came from, only
+that it is fixed and comparable (A7); a random draw chooses the node's place in
+`𝑳` rather than removing the order from `𝑳`. Randomness changes which
+permutation of the allocators the key space exhibits, not whether it exhibits
+one.
+
 ### 4.3 Lemma 6 (epoch is a coarse clock)
 
 `𝑬(𝑨[𝒊]) = ⌊𝒄ᵢ / Δ⌋`.
@@ -806,14 +890,20 @@ comparing `𝒙`; so the order reduces to the lexicographic order on `(𝒙, �
 which is precisely the local order of §3 — that is, to the order of `𝑽`.
 Lemmas 3 and 4 then apply verbatim. ∎
 
+Within one epoch this is the `𝒍ᵤ = 𝒍ᵥ` case of Lemma 5′; the corollary extends
+it across epochs and along the whole trace rather than a pair, which is what
+the appeal to Lemmas 3 and 4 buys.
+
 So the global sequence is an `𝑵`-way **merge of `𝑵` individually sorted
 streams**, and every inversion is a cross-node inversion. Theorem 2 bounds how
 far the merge can be off; Corollary 2 says the disorder is entirely inter-node.
 
 Operationally this corollary, not Theorem 2, is the one the library is built
-around. Combined with Lemma 5 it says that inside one epoch the key space is
-*partitioned by allocator*: each node's values form a contiguous run, and each
-run is exactly sorted. That is the property a leader-follower hand-over needs.
+around. Combined with Lemma 5′ it says that inside one epoch the key space is
+*partitioned by allocator*: the contiguity clause gives each node's values as a
+contiguous run, this corollary sorts each run exactly, and the runs are ordered
+by `𝒍` — which is why §1.1 asks that `𝒍` be taken from a space whose order
+means something. That is the property a leader-follower hand-over needs.
 When a leader fails silently there is an interval in which two nodes write to
 the same range; under a schema that ranks the whole timestamp above node
 identity their writes interleave and attribution requires a side channel, while
@@ -878,7 +968,13 @@ way.
   from two identifiers alone, with no coordination, so a total order agreeing
   with real time would contradict the impossibility of lock-free consensus-free
   global timestamping under unsynchronized clocks. `𝒌`-orderedness is precisely
-  the weakened guarantee that survives.
+  the weakened guarantee that survives. Read the emphasis carefully: what fails
+  is *agreeing with real time*, not *total order*. Global values are totally
+  ordered at every separation — across epochs by Lemma 5, within one by Lemma
+  5′ — and the order is reproducible by anyone holding the two values. The
+  failure is that this total order is not the real-time one, and `𝑾` bounds the
+  gap between them. A reader who takes "not linearizable" to mean "comparison
+  is unsettled inside the window" has read one word for the other.
 * Nothing here establishes **uniqueness** of global values beyond (A7): two
   processes that draw the same random `𝒍` and allocate in the same epoch with
   the same `𝒙ₗ` and `𝒔` collide. With 32-bit random `𝒍`, the birthday bound
@@ -922,6 +1018,7 @@ Batteries; Lean 4 core `Nat` only). It contains:
 | `Guid.Trace.A_lt_96` | the same at `𝑵 = 32`, for `G` |
 | `Guid.Trace.A_lt_122` | the same at `𝑵 = 58`, for the payload of `X` |
 | `Guid.pack_lt_of_epoch_lt` | Lemma 5 (epoch dominance) |
+| `Guid.pack_lt_of_node_lt` | Lemma 5′ (intra-epoch structure), forward direction |
 | `Guid.pack_le_of_suffix_le` | the equal-prefix case behind Corollary 2 |
 | `Guid.Trace` | the system model of §4.1 with (A1), (A5), (A6) |
 | `Guid.Trace.A_lt_of_epoch_lt` | Lemma 5 transported to the model |
@@ -974,6 +1071,7 @@ errors and no warnings; its `#print axioms` directives report
 'Guid.ladder_le'                  does not depend on any axioms
 'Guid.ladder_mono'                does not depend on any axioms
 'Guid.pack_lt_of_epoch_lt'        depends on axioms: [propext, Quot.sound]
+'Guid.pack_lt_of_node_lt'         depends on axioms: [propext, Quot.sound]
 'Guid.pack_le_of_suffix_le'       depends on axioms: [propext]
 'Guid.sane'                       depends on axioms: [propext, Quot.sound]
 'Guid.packL_lt_of_lt'             depends on axioms: [propext]
