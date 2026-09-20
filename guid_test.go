@@ -32,14 +32,14 @@ import (
 
 // every rung of the drift ladder, in the order of the ⟨𝒅⟩ code
 var drifts []guid.Drift = []guid.Drift{
-	guid.Drift1ms,
-	guid.Drift16ms,
-	guid.Drift268ms,
+	guid.Drift131us,
 	guid.Drift2s,
 	guid.Drift17s,
+	guid.Drift68s,
 	guid.Drift275s,
 	guid.Drift1099s,
 	guid.Drift4398s,
+	guid.Drift39h,
 }
 
 // The memory layout is the contract of the types: L is exactly 64 bits and G

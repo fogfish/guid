@@ -26,33 +26,33 @@ import (
 // Reading a v2 G value with v3.
 //
 // v2's ⟨d⟩ code and v3's mean different 𝑫: v2 computed 𝑫 = 18 + code, v3
-// reads 𝑫 from driftLadder[code] = {3,7,11,14,17,21,23,25}. Both schemas
+// reads 𝑫 from driftLadder[code] = {0,14,17,19,21,23,25,30}. Both schemas
 // place ⟨𝑬⟩, ⟨𝒍⟩, ⟨𝒙ₗ⟩ and ⟨𝒔⟩ at the positions 𝑫 gives them — v2's own
 // diagram in common.go is v3's Proposition 1 — so a value is decoded
 // correctly by either version only where the two tables agree on 𝑫 for
-// the stored code, which happens at exactly three of the eight codes:
+// the stored code, which happens at exactly one of the eight codes:
 //
 //	code   v2 𝑫   v3 𝑫   agree
-//	  0     18      3     no
-//	  1     19      7     no
-//	  2     20     11     no
-//	  3     21     14     no   <- v2's default
-//	  4     22     17     no
-//	  5     23     21     no
-//	  6     24     23     no
-//	  7     25     25    yes
+//	  0     18      0     no
+//	  1     19     14     no
+//	  2     20     17     no
+//	  3     21     19     no   <- v2's default
+//	  4     22     21     no
+//	  5     23     23    yes
+//	  6     24     25     no
+//	  7     25     30     no
 //
 // So README's "the bit layout is unchanged" holds for L, which never splits
-// a field by 𝑫, and holds for G only at code 7. Elsewhere v3's Node and Time
+// a field by 𝑫, and holds for G only at code 5. Elsewhere v3's Node and Time
 // read the wrong bit ranges — silently, since every code is a valid index
 // into driftLadder and every extraction is in range. v2's own default (code
 // 3) is among the seven that are wrong.
 //
 // FromV2 decodes with v2's table, so it recovers the values v2 meant, then
 // re-encodes with v3's, choosing the narrowest v3 rung whose window is at
-// least as wide as v2's — exact at codes 3, 5 and 7, where v2's window exists
-// on v3's ladder, and rounded up elsewhere. Migrated values are therefore
-// never less tolerant of clock skew than the v2 keyspace was.
+// least as wide as v2's — exact at the four v2 windows that exist on v3's
+// ladder (𝑫 = 19, 21, 23, 25) and rounded up at the other four. Migrated
+// values are therefore never less tolerant than the v2 keyspace was.
 //
 // This is migration tooling for a compatibility break, not a permanent part
 // of the API — hence the free function rather than the method-per-encoding

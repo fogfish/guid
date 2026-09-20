@@ -68,25 +68,29 @@ location field at all. This is a difference in what the layout can express, not
 a difference in tuning.
 
 The bucket width is `Δ`, configured with [`WithDrift`](../clock.go#L153) from
-a ladder of eight rungs, `guid.Drift1ms` … `guid.Drift4398s`. Default
-`guid.Drift275s` — 274.9 s — and the ladder runs from 1.05 ms to 73 min.
-`guid.DriftOf(d)` picks the smallest rung that covers a tolerance `d`.
+a ladder of eight rungs, `guid.Drift131us` … `guid.Drift39h`. Default
+`guid.Drift275s` — 274.9 s — and the ladder runs from 131 µs to 39.1 h.
+`guid.DriftOf(d)` picks the smallest rung that covers a budget `d`.
 
 **Read `Δ` as a failover budget, not a clock-skew budget.** It has to cover the
 interval between a silent failure and the moment the cluster has converged on a
 new owner, because that is exactly the interval during which two allocators
 write to the same range:
 
-| rung                                   | `Δ`              | covers                                                          |
-| -------------------------------------- | ---------------- | --------------------------------------------------------------- |
-| `Drift1ms` – `Drift268ms`              | 1.05 ms – 268 ms | synchronized clocks; the ordering class of Snowflake and UUIDv7 |
-| `Drift2s` – `Drift17s`                 | 2.15 s – 17.2 s  | consumer devices, lease expiry, fast failure detectors          |
-| `Drift275s` *(default)* – `Drift1099s` | 274.9 s – 1099 s | gossip / phi-accrual detection, slow cross-region hand-over     |
-| `Drift4398s`                           | 4398 s           | human-in-the-loop failover                                      |
+| rung                                   | `Δ`             | covers                                                        |
+| -------------------------------------- | --------------- | ------------------------------------------------------------- |
+| `Drift131us`                           | 131 µs          | ordering only, no attribution — Snowflake's field order       |
+| `Drift2s` – `Drift17s`                 | 2.15 s – 17.2 s | consensus election, gossip, ZooKeeper and Consul sessions     |
+| `Drift68s` – `Drift275s` *(default)*   | 68.7 s – 274.9 s | K8s node-NotReady, Kafka session, automated cross-AZ         |
+| `Drift1099s` – `Drift4398s`            | 1099 s – 4398 s | paging, cross-region, human-in-the-loop failover              |
+| `Drift39h`                             | 39.1 h          | split brain found the next morning, fleets syncing once a day |
 
-Below a second the window `Δ + 2ε` is dominated by the clock skew `ε` rather
-than by `Δ`, so the low rungs pay off only where the clocks are genuinely
-disciplined.
+Only one rung sits below a second. The window is `Δ + 2ε`, so two rungs differ
+in practice only where the wider `Δ` is large against `2ε` — below a second the
+clocks decide `W`, not the setting, so further rungs there would differ in name
+only. At the floor a run is one tick wide, so that rung buys ordering and no
+attribution; at the top, `Δ = 39.1 h` is where the bucket stops discriminating
+anything because every value lands in one of them.
 
 It is *also* the clock disagreement the ordering tolerates, which is why one
 knob serves both. And that range is not over-generous: the target is not a

@@ -25,7 +25,7 @@
 
   Nothing below constrains `D` beyond `D ≤ 47`, the width of the truncated
   clock: the layout is positional, so every drift the ladder of §1.1 offers --
-  `D ∈ {3,7,11,14,17,21,23,25}`, from Δ ≈ 1.05 ms to Δ ≈ 4398 s -- is covered
+  `D ∈ {0,14,17,19,21,23,25,30}`, from Δ ≈ 131 µs to Δ ≈ 39.1 h -- is covered
   by the same theorems.  `ladder` below is that table, and `pack_lt_96` is the
   machine-checked statement that each of its rungs fits the 96 bits of `G`.
 
@@ -96,22 +96,22 @@ def pack (N D d E l x s : Nat) : Nat :=
 /-- The drift ladder (`prove.md`, §1.1): the 3-bit code ⟨d⟩ stored in the value
     selects `D`, the number of clock bits that rank below the node.  The rungs
     are chosen rather than contiguous — the code is 3 bits while the layout
-    admits every `D ∈ {0,…,25}`. -/
+    admits every `D ∈ {0,…,47}`. -/
 def ladder : Nat → Nat
-  | 0 => 3
-  | 1 => 7
-  | 2 => 11
-  | 3 => 14
-  | 4 => 17
-  | 5 => 21
-  | 6 => 23
-  | _ => 25
+  | 0 => 0
+  | 1 => 14
+  | 2 => 17
+  | 3 => 19
+  | 4 => 21
+  | 5 => 23
+  | 6 => 25
+  | _ => 30
 
-/-- Every rung leaves at least 22 bits of epoch, i.e. `D ≤ 25 ≤ 47`. -/
-theorem ladder_le (d : Nat) : ladder d ≤ 25 := by
+/-- Every rung leaves at least 17 bits of epoch, i.e. `D ≤ 30 ≤ 47`. -/
+theorem ladder_le (d : Nat) : ladder d ≤ 30 := by
   match d with
   | 0 | 1 | 2 | 3 | 4 | 5 | 6 => decide
-  | (_ + 7) => exact Nat.le_refl 25
+  | (_ + 7) => exact Nat.le_refl 30
 
 /-- The ladder ascends: a larger code is a larger drift, so ⟨d⟩ orders values
     by the window they were allocated with.  (Assumption (A1) forbids mixing
@@ -235,7 +235,7 @@ structure Trace where
   hd : d < 2 ^ 3
   /-- drift parameter `D`, the number of clock bits ranking below the node.
       It is read off the ladder rather than assumed: `D = ladder d`, hence
-      `D ∈ {3,7,11,14,17,21,23,25}` and in particular `D ≤ 25`. -/
+      `D ∈ {0,14,17,19,21,23,25,30}` and in particular `D ≤ 30`. -/
   D : Nat
   hD : D = ladder d
   /-- the drift window `Δ = 2^(17+D)` nanoseconds. -/
@@ -295,7 +295,7 @@ theorem D_le (T : Trace) : T.D ≤ 47 := by
   omega
 
 /-- Every value of the trace is a 96-bit number: the rung is on the ladder, so
-    `D ≤ 25 ≤ 47` and `pack_lt_96` applies.  The hypothesis on the epoch is the
+    `D ≤ 30 ≤ 47` and `pack_lt_96` applies.  The hypothesis on the epoch is the
     range of the clock — 2^(47−D) epochs of 2^(17+D) ns span 2^64 ns ≈ 584
     years — and is the only thing the fit needs beyond the field widths. -/
 theorem A_lt (T : Trace) (i : Nat) (hE : T.epoch i < 2 ^ (47 - T.D)) :
@@ -466,13 +466,13 @@ end Local
 /-! ## 5.  Non-vacuity
 
 A structure with contradictory fields would make every theorem above trivially
-true, so we exhibit an execution satisfying all of them: drift code `d = 5`,
-the library default rung (`D = ladder 5 = 21`, `Δ = 2^38 ns ≈ 274.9 s`),
+true, so we exhibit an execution satisfying all of them: drift code `d = 4`,
+the library default rung (`D = ladder 4 = 21`, `Δ = 2^38 ns ≈ 274.9 s`),
 perfectly synchronized clocks, one allocation per drift window, hence `k = 1`.
 -/
 
 def sane : Trace where
-  d := 5
+  d := 4
   hd := by decide
   D := 21
   hD := by decide

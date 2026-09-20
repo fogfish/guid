@@ -110,10 +110,10 @@ disagreement the ordering tolerates, which is why one knob serves both — and o
 uncoordinated nodes, hardware without an RTC or devices behind firewalls that
 block NTP, tens of seconds of disagreement is the distribution rather than a
 pathology. It shows the value of less important faction of time. The code
-selects a rung of an eight step ladder, Drift1ms to Drift4398s, which runs from
-1.05 ms to 73 minutes, configured on the clock with WithDrift and defaulting to
+selects a rung of an eight step ladder, Drift131us to Drift39h, which runs from
+131 µs to 39 hours, configured on the clock with WithDrift and defaulting to
 Drift275s, about 4.5 minutes. Use DriftOf to pick the smallest rung that covers
-a tolerance expressed as a duration. The drift must be the same for
+a budget expressed as a duration. The drift must be the same for
 every value of a keyspace: ⟨𝒅⟩ is the most significant faction, so values
 allocated with different drift are segregated rather than interleaved. This is
 why it is a property of Chronos and not an argument of NewG and NewL.

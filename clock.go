@@ -139,15 +139,15 @@ func NewClockMock(opts ...Config) Chronos {
 // ⟨𝒍⟩ location or ⟨𝒕⟩ timestamp.
 type Config func(*clock)
 
-// WithDrift configures ⟨𝒅⟩, the clock disagreement the k-ordering tolerates.
+// WithDrift configures ⟨𝒅⟩, the failover budget the k-ordering absorbs.
 //
-// The ladder has eight rungs, from Drift1ms to Drift4398s, and defaults to
-// Drift275s. A larger drift tolerates more skew, a smaller one yields a
-// tighter k. Use DriftOf to select the rung that covers a tolerance expressed
+// The ladder has eight rungs, from Drift131us to Drift39h, and defaults to
+// Drift275s. A larger drift attributes a longer overlap, a smaller one yields
+// a tighter k. Use DriftOf to select the rung that covers a budget expressed
 // as a duration:
 //
-//	guid.NewClock(guid.WithDrift(guid.Drift16ms))
-//	guid.NewClock(guid.WithDrift(guid.DriftOf(5 * time.Second)))
+//	guid.NewClock(guid.WithDrift(guid.Drift17s))
+//	guid.NewClock(guid.WithDrift(guid.DriftOf(45 * time.Second)))
 //
 // Every clock of a keyspace must be configured with the same drift, otherwise
 // values are ordered by their drift rather than by their time.

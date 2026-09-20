@@ -1,6 +1,6 @@
 <p align="center">
   <h3 align="center">GUID</h3>
-  <p align="center"><strong>K-ordered unique identifiers in lock-free and decentralized manner for Golang applications</strong></p>
+  <p align="center"><strong>k-sorted unique identifiers in lock-free and decentralized manner for Golang applications</strong></p>
 
   <p align="center">
     <!-- Version -->
@@ -28,11 +28,48 @@
 
 ---
 
-Package guid implements interface to generate k-ordered unique identifiers in lock-free and decentralized manner for Golang applications. We says that sequence A is k-ordered if it consists of strictly ordered subsequences of length k:
+Package guid implements interface to generate k-sorted unique identifiers in lock-free and decentralized manner for Golang applications.
 
 ```
-  𝑨[𝒊 − 𝒌] ≤ 𝑨[𝒊] ≤ 𝑨[𝒊 + 𝒌] for all 𝒊 such that 𝒌 < 𝒊 ≤ 𝒏−𝒌.
+  𝑨[𝒊] ≤ 𝑨[𝒋]   whenever 𝒋 − 𝒊 ≥ 𝒌,    𝒌 = ρ·(Δ + 2σ)
 ```
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="doc/img/invariant-dark.svg">
+  <img alt="Sixteen writes from three uncoordinated nodes, shown in real-time order and again in key order: within each Δ window the keys regroup into one contiguous block per node, and no block crosses a Δ boundary." src="doc/img/invariant-light.svg">
+</picture>
+
+`𝑨` is the stream of identifiers allocated by **every node of the cluster**,
+indexed by the real time of allocation. That is the textbook
+[k-sorted sequence](https://en.wikipedia.org/wiki/K-sorted_sequence). The
+familiar `𝑨[𝒊−𝒌] ≤ 𝑨[𝒊] ≤ 𝑨[𝒊+𝒌]` is its `𝒋 − 𝒊 = 𝒌` case, and no identifier
+ever sits more than `𝒌` places from its sorted position. N nodes allocate with
+no lock, no sequencer, no NTP and no talk between them, and the stream still
+satisfies it.
+
+The key order is total, exact and identical for every reader at every separation. `𝒌` bounds one thing only: how far that order may depart from *wall-clock* order.
+
+|              |                                                                     |
+| ------------ | ------------------------------------------------------------------- |
+| population   | the cluster's whole allocation stream — every node, no coordination |
+| observable A | key order — `bytes.Compare` in the index you already have           |
+| observable B | real allocation order — the index `𝒊`                               |
+| relation     | `≤` at distance `𝒌` — the two agree beyond `𝒌` places               |
+| tolerance    | **0** beyond `𝒌` — the bound is proven and tight, not typical       |
+| window       | `𝑾 = Δ + 2σ` of wall clock; in entries, `𝒌 = ρ·𝑾`                   |
+
+So: widen a range scan by `𝑾` and it cannot miss a row; buffer `𝒌` entries and
+the stream is fully sorted; restrict `𝑨` to one node and key order *is* allocation
+order, exactly, at any rate and under any clock.
+
+**Choose `Δ` by your failover interval, not by a wish for a small `𝒌`.** Since
+`𝑾 = Δ + 2σ`, where `σ` is tens of seconds — hardware with no RTC, VMs resuming
+from a snapshot, phones back from airplane mode — a smaller `Δ` barely moves
+`𝑾`, and it gives up what `Δ` is *for*: inside one `Δ` bucket each node's
+identifiers form a single contiguous block, so two writers that overlapped
+through a hand-over stay separable by a range scan. `guid.DriftOf(d)` picks the
+rung. Proven in [doc/proof.md](doc/proof.md), machine-checked in
+[doc/proof.lean](doc/proof.lean), read first in [doc/short.md](doc/short.md).
 
 ## Key features
 
@@ -75,32 +112,34 @@ A fixed size of 96-bit is used to implement identity schema
 
 > If ⟨𝒍⟩ is meant to carry topology, assign it rather than randomize it. `guid.WithNodeRandom` — the default — gives distinct allocators, but random identities sort arbitrarily, so adjacent ring positions land far apart. Derive ⟨𝒍⟩ from the ring position with `guid.WithNodeID(...)` when you want the sort order to follow the topology.
 
-↣ ⟨𝒅⟩ is 3 drift bits defines the width Δ of the window inside which ⟨𝒍⟩ outranks time. It shows the value of less important faction of time. The code selects a rung of an eight step ladder that runs from 1.05 ms to 73 minutes, configured on the clock with `guid.WithDrift(...)` and defaulting to about 4.5 minutes.
+↣ ⟨𝒅⟩ is 3 drift bits defines the width Δ of the window inside which ⟨𝒍⟩ outranks time. It shows the value of less important faction of time. The code selects a rung of an eight step ladder that runs from 131 µs to 39 hours, configured on the clock with `guid.WithDrift(...)` and defaulting to about 4.5 minutes.
 
 **Read Δ as a failover budget, not as a clock-skew budget.** It has to cover the interval between a silent failure and the moment the cluster has converged on a new owner — because that is the interval during which two allocators write to the same range and you need their output kept apart:
 
-| constant                     | Δ       | covers                                                                                            |
-| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
-| `guid.Drift1ms`              | 1.05 ms | ordering first — the class Snowflake and UUIDv7 occupy, for clocks that are actually synchronized |
-| `guid.Drift16ms`             | 16.8 ms | one datacenter, disciplined NTP                                                                   |
-| `guid.Drift268ms`            | 268 ms  | multiple regions synchronized over a WAN                                                          |
-| `guid.Drift2s`               | 2.15 s  | consumer devices with working time sync                                                           |
-| `guid.Drift17s`              | 17.2 s  | lease expiry, fast failure detectors                                                              |
-| `guid.Drift275s` *(default)* | 274.9 s | gossip / phi-accrual failure detection, unmanaged clocks                                          |
-| `guid.Drift1099s`            | 1099 s  | slow membership convergence, cross-region hand-over                                               |
-| `guid.Drift4398s`            | 4398 s  | human-in-the-loop failover                                                                        |
+| constant                     | Δ       | covers                                                                                       |
+| ---------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `guid.Drift131us`            | 131 µs  | **ordering only, no attribution** — ⟨𝒙ₗ⟩ vanishes and the field order *is* Snowflake's       |
+| `guid.Drift2s`               | 2.15 s  | a consensus election plus lease expiry — Raft or etcd in one datacenter                      |
+| `guid.Drift17s`              | 17.2 s  | gossip convergence, ZooKeeper and Consul sessions, fast failure detectors                    |
+| `guid.Drift68s`              | 68.7 s  | Kubernetes node-NotReady plus reschedule, Kafka session timeout, health-check chains         |
+| `guid.Drift275s` *(default)* | 274.9 s | automated cross-AZ hand-over, phi-accrual detection, unmanaged clocks                        |
+| `guid.Drift1099s`            | 1099 s  | slow membership convergence, paging, cross-region hand-over                                  |
+| `guid.Drift4398s`            | 4398 s  | human-in-the-loop failover                                                                   |
+| `guid.Drift39h`              | 39.1 h  | a split brain found the next morning, a fleet that syncs once a day, a region isolated a day |
 
-The four sub-second rungs are the interesting new range: at Δ = 1.05 ms the schema is in the same ordering class as Snowflake and UUIDv7, and ⟨𝒅⟩ becomes a dial between *timestamp-primary* and *location-primary* rather than a fixed opinion. Note what the low rungs really cost, though — the window is Δ + 2ε, so below a second or so it is the quality of your clocks, not the setting, that decides the ordering.
+Only one rung sits below a second, and that is deliberate. The window is Δ + 2ε, so two rungs are distinguishable only where the wider Δ is large against 2ε — subdividing the sub-second range produces rungs that differ in name and not in 𝑾, since below a second it is the quality of your clocks, not the setting, that decides the ordering. The floor is kept because it is a useful extreme: at Δ = 131 µs the field order is exactly Snowflake's and the window is 2ε, the tightest any coordination-free schema reaches — but a run is one tick wide there, so it buys ordering and no attribution.
+
+At the other end, Δ = 39.1 h is where the window stops being a failover budget: everything a deployment allocates falls into one epoch, so the partition by ⟨𝒍⟩ discriminates nothing while 𝒌 = ρ·𝑾 grows without return. A time range narrower than Δ also costs one seek per ⟨𝒍⟩ rather than one contiguous range, and only an assigned ⟨𝒍⟩ can be enumerated to make those seeks.
 
 The same number is also the clock disagreement the ordering tolerates, which is why one knob serves both: two nodes whose clocks differ by less than Δ still sort into the same window. That matters because the target is not a managed cluster with datacenter NTP. On uncoordinated nodes — hardware without an RTC, devices behind firewalls that block NTP, VMs resuming from a snapshot, phones returning from airplane mode — tens of seconds of disagreement is the distribution, not a pathology. A timestamp-primary schema answers this by making an NTP server the coordinating authority, which is the coordination the library set out to avoid.
 
 The drift must be the same for every value of a keyspace — ⟨𝒅⟩ is the most significant faction, so values allocated with different drift are segregated rather than interleaved. This is why it is a property of the clock and not an argument of `NewG` / `NewL`.
 
 ```go
-clock := guid.NewClock(guid.WithDrift(guid.Drift16ms))
+clock := guid.NewClock(guid.WithDrift(guid.Drift17s))
 
-// guid.DriftOf picks the smallest rung that covers a tolerance
-clock := guid.NewClock(guid.WithDrift(guid.DriftOf(60 * time.Second)))
+// guid.DriftOf picks the smallest rung that covers a failover budget
+clock := guid.NewClock(guid.WithDrift(guid.DriftOf(45 * time.Second)))
 ```
 
 ↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happen during a single tick of ⟨𝒕⟩ — 131 µs — or when the clock is set backwards. The 14-bit value allows about 16K allocations per tick, a ceiling of 1.25·10⁸ per second per process. Read that as the saturation point rather than as a throughput figure: it is about the cost of the atomic increment itself, so a process cannot approach it while doing anything with the identifiers it allocates, and crossing it produces run-ahead rather than collisions — ⟨𝒕⟩ advances past the wall clock and the gap closes on its own once the burst ends. [§3.6 of the proof](doc/proof.md) has the rates.
@@ -341,3 +380,4 @@ go test
 2. [Universal Unique Identifiers](https://tools.ietf.org/html/rfc4122),
 3. [Twitter Snowflake](https://blog.twitter.com/engineering/en_us/a/2010/announcing-snowflake.html)
 4. [Flake](https://github.com/boundary/flake)
+5. [K-sorted sequence](https://en.wikipedia.org/wiki/K-sorted_sequence)

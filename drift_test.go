@@ -35,14 +35,14 @@ var ladder = []struct {
 	bits   uint64
 	window time.Duration
 }{
-	{guid.Drift1ms, 3, 1048576},
-	{guid.Drift16ms, 7, 16777216},
-	{guid.Drift268ms, 11, 268435456},
+	{guid.Drift131us, 0, 131072},
 	{guid.Drift2s, 14, 2147483648},
 	{guid.Drift17s, 17, 17179869184},
+	{guid.Drift68s, 19, 68719476736},
 	{guid.Drift275s, 21, 274877906944},
 	{guid.Drift1099s, 23, 1099511627776},
 	{guid.Drift4398s, 25, 4398046511104},
+	{guid.Drift39h, 30, 140737488355328},
 }
 
 func TestDriftLadder(t *testing.T) {
@@ -57,28 +57,31 @@ func TestDriftLadder(t *testing.T) {
 	}
 }
 
-// DriftOf selects the smallest rung whose window covers the tolerance, so the
-// k-ordering absorbs at least as much clock disagreement as was asked for.
+// DriftOf selects the smallest rung whose window covers the budget, so the
+// k-ordering absorbs at least as long an overlap as was asked for.
 func TestDriftOf(t *testing.T) {
 	for _, tc := range []struct {
-		tolerance time.Duration
-		expect    guid.Drift
+		budget time.Duration
+		expect guid.Drift
 	}{
-		{0, guid.Drift1ms},
-		{time.Millisecond, guid.Drift1ms},
-		{2 * time.Millisecond, guid.Drift16ms},
-		{100 * time.Millisecond, guid.Drift268ms},
+		{0, guid.Drift131us},
+		{131 * time.Microsecond, guid.Drift131us},
+		{time.Millisecond, guid.Drift2s},
 		{time.Second, guid.Drift2s},
 		{5 * time.Second, guid.Drift17s},
-		{time.Minute, guid.Drift275s},
+		{45 * time.Second, guid.Drift68s},
+		{time.Minute, guid.Drift68s},
+		// 274.9 s is just under five minutes, so the rung above it answers
+		{5 * time.Minute, guid.Drift1099s},
 		{10 * time.Minute, guid.Drift1099s},
 		{time.Hour, guid.Drift4398s},
-		{24 * time.Hour, guid.Drift4398s},
+		{24 * time.Hour, guid.Drift39h},
+		{7 * 24 * time.Hour, guid.Drift39h},
 	} {
-		d := guid.DriftOf(tc.tolerance)
+		d := guid.DriftOf(tc.budget)
 		it.Then(t).Should(
 			it.Equal(d, tc.expect),
-			it.True(d.Window() >= tc.tolerance || d == guid.Drift4398s),
+			it.True(d.Window() >= tc.budget || d == guid.Drift39h),
 		)
 	}
 }

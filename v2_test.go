@@ -130,16 +130,17 @@ func TestFromStringMisreadsV2Default(t *testing.T) {
 	}
 }
 
-// At codes 3, 5 and 7 v2's window already exists on v3's ladder, so the
+// At codes 1, 3, 5 and 7 v2's window already exists on v3's ladder, so the
 // migrated value's drift is exact, not merely wide enough.
 func TestFromV2IsExactAtSharedRungs(t *testing.T) {
 	cases := []struct {
 		code  uint64
 		drift guid.Drift
 	}{
-		{3, guid.Drift275s},
-		{5, guid.Drift1099s},
-		{7, guid.Drift4398s},
+		{1, guid.Drift68s},   // v2 𝑫=19 (68.7s)
+		{3, guid.Drift275s},  // v2 𝑫=21 (274.9s), v2's default
+		{5, guid.Drift1099s}, // v2 𝑫=23 (1099s)
+		{7, guid.Drift4398s}, // v2 𝑫=25 (4398s)
 	}
 
 	for _, c := range cases {
@@ -155,14 +156,14 @@ func TestFromV2IsExactAtSharedRungs(t *testing.T) {
 }
 
 // At the four codes with no exact match, the migrated drift is the narrowest
-// v3 rung that is at least as wide — never narrower than the v2 window.
+// v3 rung that is at least as wide — never narrower than the v2 window, and
+// never more than one rung, a factor of two, wider than it.
 func TestFromV2NeverNarrowsTheWindow(t *testing.T) {
 	cases := []struct {
 		code  uint64
 		drift guid.Drift
 	}{
-		{0, guid.Drift275s},  // v2 𝑫=18 (34.4s)  -> smallest v3 rung >= it: 274.9s
-		{1, guid.Drift275s},  // v2 𝑫=19 (68.7s)  -> smallest v3 rung >= it: 274.9s
+		{0, guid.Drift68s},   // v2 𝑫=18 (34.4s)  -> smallest v3 rung >= it: 68.7s
 		{2, guid.Drift275s},  // v2 𝑫=20 (137.4s) -> 274.9s
 		{4, guid.Drift1099s}, // v2 𝑫=22 (549.8s) -> 1099s
 		{6, guid.Drift4398s}, // v2 𝑫=24 (2199s)  -> 4398s

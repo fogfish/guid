@@ -45,7 +45,7 @@ what that buys the proofs.
 
 | symbol | meaning | width |
 |---|---|---|
-| `𝑫`   | drift parameter, the rung's `Drift.Bits` value, `𝑫 ∈ {3,7,11,14,17,21,23,25}` | — |
+| `𝑫`   | drift parameter, the rung's `Drift.Bits` value, `𝑫 ∈ {0,14,17,19,21,23,25,30}` | — |
 | `𝒅`   | drift code stored in the value, the index of the rung, `𝒅 ∈ {0,…,7}` | 3 bit |
 | `𝒕`   | clock reading in nanoseconds | 64 bit |
 | `𝒙`   | truncated clock, `𝒙 = ⌊𝒕 / 2¹⁷⌋` (unit ≈ 131 µs) | 47 bit |
@@ -60,33 +60,48 @@ what that buys the proofs.
 
 `Δ` is the quantity the user configures, on the clock and not per allocation,
 with `WithDrift`. `⟨𝒅⟩` is 3 bits, so the ladder has eight rungs while the
-layout admits every `𝑫 ∈ {0,…,25}`; the rungs are therefore *chosen* rather
+layout admits every `𝑫 ∈ {0,…,47}`; the rungs are therefore *chosen* rather
 than contiguous. [`driftLadder`](../drift.go#L86) is that table and
-[`DriftOf`](../drift.go#L107) maps a requested tolerance to the smallest rung
+[`DriftOf`](../drift.go#L107) maps a requested budget to the smallest rung
 whose window covers it:
 
-| `𝒅` | 0 | 1 | 2 | 3 | 4 | 5 *(default)* | 6 | 7 |
+| `𝒅` | 0 | 1 | 2 | 3 | 4 *(default)* | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|---|
-| `𝑫` | 3 | 7 | 11 | 14 | 17 | **21** | 23 | 25 |
-| `Δ` | 1.05 ms | 16.8 ms | 268 ms | 2.15 s | 17.2 s | **274.9 s** | 1099 s | 4398 s |
-| constant | `Drift1ms` | `Drift16ms` | `Drift268ms` | `Drift2s` | `Drift17s` | **`Drift275s`** | `Drift1099s` | `Drift4398s` |
+| `𝑫` | 0 | 14 | 17 | 19 | **21** | 23 | 25 | 30 |
+| `Δ` | 131 µs | 2.15 s | 17.2 s | 68.7 s | **274.9 s** | 1099 s | 4398 s | 140737 s |
+| constant | `Drift131us` | `Drift2s` | `Drift17s` | `Drift68s` | **`Drift275s`** | `Drift1099s` | `Drift4398s` | `Drift39h` |
 
 The ladder is a property of `⟨𝒅⟩` rather than of any one type, so `L`, `G` and
 `X` share it: the rung means the same thing and the code stored in a value has
 the same reading whichever width the value is.
 
-The ladder spends four rungs below one second and four above it. The lower
-four reach the ordering class of Snowflake and UUIDv7 — at `𝑫 = 3` the window
-is a millisecond, and at `𝑫 = 0`, reachable by the layout though not on the
-ladder, `⟨𝒙ₗ⟩` vanishes altogether and the field order `⟨𝒅⟩·⟨𝑬⟩·⟨𝒍⟩·⟨𝒔⟩` *is*
-Snowflake's. The upper four are failover budgets, which is what the library was
-written for; `𝒅 = 5` remains the default and `𝒅 = 7` the top rung, so an
-existing deployment has a home on the new ladder.
+The ladder spends one rung below a second and seven above it. The floor
+`𝑫 = 0` is where `⟨𝒙ₗ⟩` vanishes altogether and the field order
+`⟨𝒅⟩·⟨𝑬⟩·⟨𝒍⟩·⟨𝒔⟩` *is* Snowflake's: the window is `2ε`, and a run is one tick
+wide, so the rung offers ordering and no attribution at all. The seven above it
+are failover budgets, which is what the library was written for, and they cover
+the interval a hand-over can occupy — from a consensus election to a split
+brain found the next morning. Two rungs are distinguishable only where the
+wider `Δ` is large against `2ε`, which is why the sub-second range is not
+subdivided: below a second the rung stops deciding `𝑾` and the deployment's
+clocks decide it instead.
 
-The bounds on `𝑫` are both properties of the schema rather than of the machine
-word. Above, `⟨𝑬⟩` is `47 − 𝑫` bits and an epoch narrower than 22 bits no
-longer spans the range of the clock, which caps the ladder at `𝑫 = 25`. Below,
-`𝑫 = 0` is simply the point where there are no low clock bits left to place.
+The bounds on `𝑫` are properties of the schema rather than of the machine word,
+and both lie outside the ladder. Below, `𝑫 = 0` is the point where there are no
+low clock bits left to place. Above, `𝑫 = 47` is where `⟨𝑬⟩` vanishes and `⟨𝒍⟩`
+outranks time altogether, so `𝑫 = 46` is the last value that orders by time at
+all. The range of the clock bounds nothing in between: `2^(47−𝑫)` epochs of
+`2^(17+𝑫)` ns span `2⁶⁴` ns ≈ 584 years for *every* `𝑫`, a narrower `⟨𝑬⟩`
+counting proportionally wider epochs. What stops the ladder at `𝑫 = 30` is the
+meaning of `Δ` rather than the geometry: past a day the window is no longer a
+failover budget but all of time — every value of a deployment falls in one
+epoch, so the partition by `⟨𝒍⟩` discriminates nothing, while `𝒌 = ρ·𝑾` grows
+without any return.
+
+> Revisions of this note before the ladder was re-based gave a 22-bit epoch as
+> the ceiling's reason, capping `𝑫` at 25. The span calculation above shows
+> that reason was empty — the span is invariant in `𝑫` — and 25 was in fact
+> inherited from v2, whose codes meant `𝑫 = 18 + code`.
 
 > Versions of this library up to v3 floored the ladder at `𝑫 = 18`, and that
 > floor *was* geometry: the value was assembled by hand-placed shifts that
@@ -133,7 +148,7 @@ random `𝒍` gives an arbitrary but thereafter fixed permutation — and whethe
 
 ### 1.2 Proposition 1 (global layout)
 
-For `𝑫 ∈ {0,…,25}`, `𝒅 < 2³`, `𝒍 < 2³²`, `𝒔 < 2¹⁴`:
+For `𝑫 ∈ {0,…,47}`, `𝒅 < 2³`, `𝒍 < 2³²`, `𝒔 < 2¹⁴`:
 
 ```
   ⟦makeG(𝒍, 𝑫, 𝒕, 𝒔)⟧ = 𝒅·2⁹³ + 𝑬·2^(46+𝑫) + 𝒍·2^(14+𝑫) + 𝒙ₗ·2¹⁴ + 𝒔
@@ -173,7 +188,7 @@ construction from a 64-bit `𝒕`, and `𝒍`, `𝒔` are masked to their widths
 
 The word boundary has left the argument entirely — it is a fact about the
 registers `hi` and `lo` are held in, not about the value, which is why the
-range of the proposition is now the whole of `{0,…,25}`. `Guid.pack_lt_96` in
+range of the proposition is now the whole of `{0,…,47}`. `Guid.pack_lt_96` in
 [proof.lean](proof.lean) is the machine-checked half of the same statement:
 the five fields fit 96 bits for every `𝑫 ≤ 47`.
 
@@ -197,7 +212,7 @@ does: `⟨𝒍⟩` widens from 32 to 58 bits, and 6 of the 128 bits are spent on
 version and variant fields the RFC fixes.
 
 Write `⟪𝒖⟫` for the **payload**, the 122-bit positional number the five
-fractions occupy. For `𝑫 ∈ {0,…,25}`, `𝒅 < 2³`, `𝒍 < 2⁵⁸`, `𝒔 < 2¹⁴`:
+fractions occupy. For `𝑫 ∈ {0,…,47}`, `𝒅 < 2³`, `𝒍 < 2⁵⁸`, `𝒔 < 2¹⁴`:
 
 ```
   ⟪makeX(𝒍, 𝑫, 𝒕, 𝒔)⟫ = 𝒅·2¹¹⁹ + 𝑬·2^(72+𝑫) + 𝒍·2^(14+𝑫) + 𝒙ₗ·2¹⁴ + 𝒔
@@ -937,26 +952,28 @@ construction above predicts.
 If the cluster allocates at a peak aggregate rate of `ρ` identifiers per
 second, then `𝒌 = ⌈ρ·𝑾⌉ = ⌈ρ·(Δ + 2ε)⌉`. With `ε = 1 s`:
 
-| `ρ` \ `𝑫` | 3 (`Δ`=1.05 ms, floor) | 17 (`Δ`=17.2 s) | 21 (`Δ`=274.9 s, default) | 25 (`Δ`=4398 s) |
-|---|---|---|---|---|
-| 10³ /s | 2.0·10³ | 1.9·10⁴ | 2.8·10⁵ | 4.4·10⁶ |
-| 10⁵ /s | 2.0·10⁵ | 1.9·10⁶ | 2.8·10⁷ | 4.4·10⁸ |
-| 10⁶ /s | 2.0·10⁶ | 1.9·10⁷ | 2.8·10⁸ | 4.4·10⁹ |
+| `ρ` \ `𝑫` | 0 (`Δ`=131 µs, floor) | 17 (`Δ`=17.2 s) | 21 (`Δ`=274.9 s, default) | 25 (`Δ`=4398 s) | 30 (`Δ`=39.1 h, top) |
+|---|---|---|---|---|---|
+| 10³ /s | 2.0·10³ | 1.9·10⁴ | 2.8·10⁵ | 4.4·10⁶ | 1.4·10⁸ |
+| 10⁵ /s | 2.0·10⁵ | 1.9·10⁶ | 2.8·10⁷ | 4.4·10⁸ | 1.4·10¹⁰ |
+| 10⁶ /s | 2.0·10⁶ | 1.9·10⁷ | 2.8·10⁸ | 4.4·10⁹ | 1.4·10¹¹ |
 
 `𝒌` is an index-space quantity and therefore grows with throughput; the
 time-space statement of Lemma 7 — *two values allocated more than `Δ + 2ε`
 apart are always correctly ordered* — is invariant and is the one to reason
 with. Choosing `𝑫` is exactly the trade: a larger `Δ` tolerates more clock
 skew, a smaller `Δ` yields a tighter `𝒌`. The floor of the ladder bounds how
-tight `𝒌` can be made: `𝑫 = 3` is its lowest rung, so `𝑾 ≥ 1.05 ms + 2ε`
+tight `𝒌` can be made: `𝑫 = 0` is its lowest rung, so `𝑾 ≥ 131 µs + 2ε`
 whatever the deployment's clocks are worth.
 
-The lower rungs shift where the window comes from. At `𝑫 = 3` with `ε = 1 s`
-the schema contributes 1.05 ms of a 2.001 s window — `𝑾` is `2ε` to within
-0.06 %, so `𝒌` is decided by the quality of the deployment's clocks and not by
-the drift setting at all. Selecting such a rung is therefore a statement about
-`ε`: it pays off in a datacenter where `ε` is a millisecond (`𝑾 ≈ 3 ms`) and
-buys nothing where `ε` is a second. This is a change in what a user has to
+The floor rung shifts where the window comes from. At `𝑫 = 0` with `ε = 1 s`
+the schema contributes 131 µs of a 2.000131 s window — `𝑾` is `2ε` to within
+0.007 %, so `𝒌` is decided by the quality of the deployment's clocks and not by
+the drift setting at all. Selecting it is therefore a statement about `ε`: it
+pays off in a datacenter where `ε` is a millisecond (`𝑾 ≈ 2 ms`) and buys
+nothing where `ε` is a second. This is also why the ladder has one rung there
+rather than four: two rungs whose `Δ` both sit far below `2ε` produce the same
+`𝑾`, so they are the same rung in everything but name. This is a change in what a user has to
 reason about, not in the theorem — §4.8 shows `𝑾 = Δ + 2ε` is tight either
 way.
 
@@ -1008,7 +1025,7 @@ Batteries; Lean 4 core `Nat` only). It contains:
 | `Guid.div_lt_div_of_add_le` | the division step of Lemma 7 |
 | `Guid.pack` | Propositions 1 and 1′, the positional encoding, over a node of `N` bits |
 | `Guid.ladder` | the drift ladder of §1.1, code `𝒅` ↦ `𝑫` |
-| `Guid.ladder_le` | every rung satisfies `𝑫 ≤ 25`, so `⟨𝑬⟩` keeps 22 bits |
+| `Guid.ladder_le` | every rung satisfies `𝑫 ≤ 30`, so `⟨𝑬⟩` keeps 17 bits |
 | `Guid.ladder_mono` | the ladder ascends, so `⟨𝒅⟩` orders values by window |
 | `Guid.pack_lt` | **the layout fits `64 + N` bits at every `𝑫 ≤ 47`** (§1.2, §1.2′) |
 | `Guid.pack_lt_96` | the same at `𝑵 = 32`: a `G` is 96 bits |

@@ -236,8 +236,7 @@ removes the persist-and-recover-the-counter problem a plain integer has.
 
 Comparison inside a version vector is always intra-actor, where the guarantee
 is exact rather than k-ordered. The drift window never enters correctness:
-verified at the widest rung, `Δ` = 73 min, 10 000 allocations at one `⟨l⟩`,
-exactly ordered.
+verified at `Δ` = 73 min, 10 000 allocations at one `⟨l⟩`, exactly ordered.
 
 Which type:
 
