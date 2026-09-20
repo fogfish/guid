@@ -13,7 +13,7 @@
     </a>
     <!-- Build Status  -->
     <a href="https://github.com/fogfish/guid/actions/">
-      <img src="https://github.com/fogfish/guid/workflows/test/badge.svg?branch=main" />
+      <img src="https://github.com/fogfish/guid/actions/workflows/check-test.yml/badge.svg?branch=main" />
     </a>
     <!-- GitHub -->
     <a href="http://github.com/fogfish/guid">
@@ -69,7 +69,7 @@ from a snapshot, phones back from airplane mode — a smaller `Δ` barely moves
 identifiers form a single contiguous block, so two writers that overlapped
 through a hand-over stay separable by a range scan. `guid.DriftOf(d)` picks the
 rung. Proven in [doc/proof.md](doc/proof.md), machine-checked in
-[doc/proof.lean](doc/proof.lean), read first in [doc/short.md](doc/short.md).
+[doc/proof.lean](doc/proof.lean), read first in [doc/about.md](doc/about.md).
 
 ## Key features
 
