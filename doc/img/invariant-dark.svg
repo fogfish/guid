@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 486" width="1280" height="486" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">
+<rect width="1280" height="486" fill="none"/>
+<line x1="720.0" y1="60" x2="720.0" y2="378" stroke="#64748b" stroke-width="1.5" stroke-dasharray="5 5"/>
+<text x="720.0" y="48" fill="#94a3b8" font-size="13" text-anchor="middle">Δ boundary · time decides, blocks never cross it</text>
+<line x1="135" y1="132" x2="1181" y2="132" stroke="#475569" stroke-width="2"/>
+<line x1="135" y1="340" x2="1181" y2="340" stroke="#475569" stroke-width="2"/>
+<rect x="153" y="316" width="168" height="48" rx="24" fill="#60a5fa" fill-opacity="0.17"/>
+<rect x="339" y="316" width="168" height="48" rx="24" fill="#fbbf24" fill-opacity="0.17"/>
+<rect x="525" y="316" width="168" height="48" rx="24" fill="#2dd4bf" fill-opacity="0.17"/>
+<rect x="747" y="316" width="168" height="48" rx="24" fill="#60a5fa" fill-opacity="0.17"/>
+<rect x="933" y="316" width="106" height="48" rx="24" fill="#fbbf24" fill-opacity="0.17"/>
+<rect x="1057" y="316" width="106" height="48" rx="24" fill="#2dd4bf" fill-opacity="0.17"/>
+<path d="M 175 147 C 175 225, 175 247, 175 325" fill="none" stroke="#60a5fa" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 237 147 C 237 225, 361 247, 361 325" fill="none" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 299 147 C 299 225, 547 247, 547 325" fill="none" stroke="#2dd4bf" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 361 147 C 361 225, 237 247, 237 325" fill="none" stroke="#60a5fa" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 423 147 C 423 225, 609 247, 609 325" fill="none" stroke="#2dd4bf" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 485 147 C 485 225, 423 247, 423 325" fill="none" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 547 147 C 547 225, 485 247, 485 325" fill="none" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 609 147 C 609 225, 299 247, 299 325" fill="none" stroke="#60a5fa" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 671 147 C 671 225, 671 247, 671 325" fill="none" stroke="#2dd4bf" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 769 147 C 769 225, 955 247, 955 325" fill="none" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 831 147 C 831 225, 769 247, 769 325" fill="none" stroke="#60a5fa" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 893 147 C 893 225, 1079 247, 1079 325" fill="none" stroke="#2dd4bf" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 955 147 C 955 225, 831 247, 831 325" fill="none" stroke="#60a5fa" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 1017 147 C 1017 225, 1017 247, 1017 325" fill="none" stroke="#fbbf24" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 1079 147 C 1079 225, 1141 247, 1141 325" fill="none" stroke="#2dd4bf" stroke-opacity="0.45" stroke-width="2"/>
+<path d="M 1141 147 C 1141 225, 893 247, 893 325" fill="none" stroke="#60a5fa" stroke-opacity="0.45" stroke-width="2"/>
+<circle cx="175" cy="132" r="15" fill="#60a5fa"/>
+<text x="175" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="237" cy="132" r="15" fill="#fbbf24"/>
+<text x="237" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="299" cy="132" r="15" fill="#2dd4bf"/>
+<text x="299" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="361" cy="132" r="15" fill="#60a5fa"/>
+<text x="361" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="423" cy="132" r="15" fill="#2dd4bf"/>
+<text x="423" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="485" cy="132" r="15" fill="#fbbf24"/>
+<text x="485" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="547" cy="132" r="15" fill="#fbbf24"/>
+<text x="547" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="609" cy="132" r="15" fill="#60a5fa"/>
+<text x="609" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="671" cy="132" r="15" fill="#2dd4bf"/>
+<text x="671" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="769" cy="132" r="15" fill="#fbbf24"/>
+<text x="769" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="831" cy="132" r="15" fill="#60a5fa"/>
+<text x="831" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="893" cy="132" r="15" fill="#2dd4bf"/>
+<text x="893" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="955" cy="132" r="15" fill="#60a5fa"/>
+<text x="955" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="1017" cy="132" r="15" fill="#fbbf24"/>
+<text x="1017" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="1079" cy="132" r="15" fill="#2dd4bf"/>
+<text x="1079" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="1141" cy="132" r="15" fill="#60a5fa"/>
+<text x="1141" y="137" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="175" cy="340" r="15" fill="#60a5fa"/>
+<text x="175" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="237" cy="340" r="15" fill="#60a5fa"/>
+<text x="237" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="299" cy="340" r="15" fill="#60a5fa"/>
+<text x="299" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="361" cy="340" r="15" fill="#fbbf24"/>
+<text x="361" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="423" cy="340" r="15" fill="#fbbf24"/>
+<text x="423" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="485" cy="340" r="15" fill="#fbbf24"/>
+<text x="485" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="547" cy="340" r="15" fill="#2dd4bf"/>
+<text x="547" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="609" cy="340" r="15" fill="#2dd4bf"/>
+<text x="609" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="671" cy="340" r="15" fill="#2dd4bf"/>
+<text x="671" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="769" cy="340" r="15" fill="#60a5fa"/>
+<text x="769" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="831" cy="340" r="15" fill="#60a5fa"/>
+<text x="831" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="893" cy="340" r="15" fill="#60a5fa"/>
+<text x="893" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">A</text>
+<circle cx="955" cy="340" r="15" fill="#fbbf24"/>
+<text x="955" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="1017" cy="340" r="15" fill="#fbbf24"/>
+<text x="1017" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">B</text>
+<circle cx="1079" cy="340" r="15" fill="#2dd4bf"/>
+<text x="1079" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<circle cx="1141" cy="340" r="15" fill="#2dd4bf"/>
+<text x="1141" y="345" fill="#0b1220" font-size="14" font-weight="700" text-anchor="middle">C</text>
+<text x="135" y="126" fill="#f1f5f9" font-size="15" font-weight="700" text-anchor="end" letter-spacing="0.6">ALLOCATED</text>
+<text x="135" y="147" fill="#94a3b8" font-size="13" text-anchor="end">real time  →</text>
+<text x="135" y="334" fill="#f1f5f9" font-size="15" font-weight="700" text-anchor="end" letter-spacing="0.6">STORED</text>
+<text x="135" y="355" fill="#94a3b8" font-size="13" text-anchor="end">key order</text>
+<text x="135" y="84" fill="#94a3b8" font-size="13">16 writes · 3 nodes · no lock, no sequencer, no NTP, no coordination</text>
+<path d="M 153 385 L 153 392 L 693 392 L 693 385" fill="none" stroke="#64748b" stroke-width="1.5"/>
+<text x="423.0" y="413" fill="#f1f5f9" font-size="14" font-weight="700" text-anchor="middle">Δ</text>
+<path d="M 747 385 L 747 392 L 1163 392 L 1163 385" fill="none" stroke="#64748b" stroke-width="1.5"/>
+<text x="955.0" y="413" fill="#f1f5f9" font-size="14" font-weight="700" text-anchor="middle">Δ</text>
+<text x="658.0" y="437" fill="#94a3b8" font-size="13" text-anchor="middle">inside one Δ window: one contiguous block per node, exactly ordered</text>
+<text x="658.0" y="463" fill="#f1f5f9" font-size="14" text-anchor="middle">no key is more than <tspan font-weight="700">k = ρ·(Δ + 2σ)</tspan> positions from where real time would put it</text>
+</svg>
