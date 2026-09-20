@@ -4,7 +4,7 @@ A deployment note for the use case the layout was designed around: virtual
 nodes on a ring, identifiers allocated without coordination, and an interval of
 split brain or partial failure during which two owners write to one range.
 
-It assumes you have read [short.md](short.md), which states what the schema
+It assumes you have read [about.md](about.md), which states what the schema
 guarantees. This note is about the decisions the schema leaves to you — what to
 put in `⟨l⟩`, how to size `Δ`, and what the identifiers can and cannot settle
 once the partition heals. The figures quoted are measured against this
@@ -183,7 +183,7 @@ is room to carry a token prefix in the high bits and a disambiguator in the
 low ones if the two must be separated.
 
 There is no birthday bound to plan against here. The bound quoted in
-[short.md](short.md#where-it-breaks) applies to
+[about.md](about.md#where-it-breaks) applies to
 [`WithNodeRandom`](../clock.go#L198); addresses claimed on a ring are distinct
 by the same mechanism that stops two vnodes occupying one position.
 
