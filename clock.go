@@ -21,7 +21,7 @@ import (
 	"crypto/sha256"
 	"io"
 	"os"
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -95,7 +95,7 @@ type Chronos interface {
 var (
 	Clock   = newDefaultClock(unixtime, ForwardTime, seqAscending)
 	Unclock = newDefaultClock(inversetime, InverseTime, seqDescending)
-	Mock    = &Chrono{order: ForwardTime, drift: driftDefault, mock: true, once: &sync.Once{}}
+	Mock    = &Chrono{order: ForwardTime, drift: driftDefault, mock: true, advance: new(atomic.Pointer[func(uint64) uint64])}
 )
 
 func newDefaultClock(ticker func() uint64, order TimeOrder, shared *sequence) *Chrono {
@@ -105,7 +105,7 @@ func newDefaultClock(ticker func() uint64, order TimeOrder, shared *sequence) *C
 		order:    order,
 		ticker:   ticker,
 		shared:   shared,
-		once:     &sync.Once{},
+		advance:  new(atomic.Pointer[func(uint64) uint64]),
 	}
 }
 
@@ -151,16 +151,16 @@ type Chrono struct {
 	ckInterval    time.Duration
 	ckOut         chan<- uint64
 
-	// once guards resolve, below: the sequence a private fork settles on,
-	// and the wrapped advance function, computed once from whatever
-	// combination of WithSeed/WithCheckpoint this clock accumulated
-	// regardless of the order they were called in. A pointer, not a plain
-	// sync.Once, because fork copies a Chrono by value and a sync.Once must
-	// never be copied after use — fork always replaces it with a fresh one,
-	// but a value field would still make that copy look, to go vet and to a
-	// future reader, like copying a lock in use.
-	once    *sync.Once
-	advance func(uint64) uint64
+	// advance caches the outcome of resolve, below: the wrapped advance
+	// function built from whatever combination of WithSeed/WithCheckpoint
+	// this clock accumulated, regardless of the order they were called in.
+	// nil until first resolved. A pointer to an atomic.Pointer, not a plain
+	// one, for the same reason as sequence's fields further down this file:
+	// fork copies a Chrono by value, and an atomic type must never be
+	// copied after use — fork always replaces it with a fresh one, but a
+	// value field would still make that copy look, to go vet and to a
+	// future reader, like copying state that is live elsewhere.
+	advance *atomic.Pointer[func(uint64) uint64]
 }
 
 func (c *Chrono) Node() uint64 { return c.location }
@@ -179,7 +179,12 @@ func (c *Chrono) T() (uint64, uint64) {
 		return 0, 0
 	}
 
-	v := c.resolve()(c.ticker())
+	advance := c.advance.Load()
+	if advance == nil {
+		advance = c.resolve()
+	}
+
+	v := (*advance)(c.ticker())
 	return v >> bitsSeq << bitsSeqDrift, v & maskSeq
 }
 
@@ -190,33 +195,39 @@ func (c *Chrono) T() (uint64, uint64) {
 // order: whichever is called last does not clobber what an earlier one in
 // the same chain set up, because none of them touch the sequence directly —
 // they only record intent, and resolve reads all of it together.
-func (c *Chrono) resolve() func(uint64) uint64 {
-	c.once.Do(func() {
-		seq := c.shared
-		if seq == nil {
-			if c.order == InverseTime {
-				seq = descending()
-			} else {
-				seq = &sequence{}
-			}
-		}
-
-		if c.hasSeed {
-			seq.seed(c.seed)
-		}
-
-		advance := seq.next
+//
+// Two goroutines racing here may both build a candidate — each seeding its
+// own throwaway private sequence — before one wins the CompareAndSwap; the
+// loser's sequence was never handed to any allocator, so discarding it is
+// exactly as safe as sequence.seed's contract requires. There is no lock:
+// the redundant work of losing the race is cheaper than blocking on one.
+func (c *Chrono) resolve() *func(uint64) uint64 {
+	seq := c.shared
+	if seq == nil {
 		if c.order == InverseTime {
-			advance = seq.prev
+			seq = descending()
+		} else {
+			seq = &sequence{}
 		}
+	}
 
-		if c.hasCheckpoint {
-			advance = withCheckpoint(advance, c.ckOut, c.ckInterval)
-		}
+	if c.hasSeed {
+		seq.seed(c.seed)
+	}
 
-		c.advance = advance
-	})
-	return c.advance
+	advance := seq.next
+	if c.order == InverseTime {
+		advance = seq.prev
+	}
+
+	if c.hasCheckpoint {
+		advance = withCheckpoint(advance, c.ckOut, c.ckInterval)
+	}
+
+	if c.advance.CompareAndSwap(nil, &advance) {
+		return &advance
+	}
+	return c.advance.Load()
 }
 
 // fork copies the receiver so that every WithXXX method returns a new clock
@@ -225,8 +236,7 @@ func (c *Chrono) resolve() func(uint64) uint64 {
 // ever touched, no matter how a caller configures the value it gets back.
 func (c *Chrono) fork() *Chrono {
 	cp := *c
-	cp.once = &sync.Once{}
-	cp.advance = nil
+	cp.advance = new(atomic.Pointer[func(uint64) uint64])
 	return &cp
 }
 
