@@ -46,6 +46,18 @@ import (
 //	↣ the byte order is the order of the identifiers, so bytes.Compare,
 //	  bytes.Equal and sort.Slice over the raw bytes agree with Before,
 //	  After and Equal.
+//
+// Unlike X, G reserves no version or variant field: every 96-bit number is a
+// syntactically valid G, so FromBytes, FromString and FromBase62 can reject a
+// malformed length but not a garbage payload of the right one — there is no
+// bit pattern left for the schema to check, and widening the layout to make
+// room for one would cost every value of the type, not only the decoded ones.
+// An application that must tell a genuine G from arbitrary data has to keep
+// that guarantee on its own side, e.g. by wrapping G in a type nothing outside
+// this package can construct, or by storing a provenance tag alongside it.
+// Reach for X when that validation matters more than the footprint; its
+// FromString, FromBytes and FromBase62 all check the version and variant
+// RFC 9562 fixes.
 type G [SizeG]byte
 
 // NewG allocates globally unique 96-bit k-ordered value.
@@ -205,7 +217,11 @@ func (uid G) String() string {
 	return *(*string)(unsafe.Pointer(&str))
 }
 
-// Base62 encodes k-ordered value to lexicographically sortable base62 string
+// Base62 encodes k-ordered value to a lexicographically sortable base62
+// string. The output is zero-padded to a fixed width per type, which is what
+// makes it sortable: a positional numeral system only orders lexicographically
+// at a fixed width, since a shorter, unpadded string can otherwise sort after
+// a longer one representing a larger value.
 func (uid G) Base62() string {
 	str := encode62(uid[:])
 	return *(*string)(unsafe.Pointer(&str))

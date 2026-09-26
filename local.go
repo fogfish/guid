@@ -38,6 +38,14 @@ import (
 // registers, compared with a single instruction and stored in 8 bytes, so it
 // costs no more than the uint64 an application would otherwise use as a
 // surrogate key.
+//
+// Like G, L reserves no version or variant field: every 64-bit number is a
+// syntactically valid L, so FromBytes, FromString and FromBase62 can reject a
+// malformed length but not a garbage payload of the right one. An application
+// that must tell a genuine L from arbitrary data has to keep that guarantee on
+// its own side, e.g. by wrapping L in a type nothing outside this package can
+// construct, or by storing a provenance tag alongside it, see G for the same
+// note in full.
 type L uint64
 
 // NewL allocates locally unique 64-bit k-ordered value.
@@ -142,7 +150,11 @@ func (uid L) String() string {
 	return *(*string)(unsafe.Pointer(&str))
 }
 
-// Base62 encodes k-ordered value to lexicographically sortable base62 string
+// Base62 encodes k-ordered value to a lexicographically sortable base62
+// string. The output is zero-padded to a fixed width per type, which is what
+// makes it sortable: a positional numeral system only orders lexicographically
+// at a fixed width, since a shorter, unpadded string can otherwise sort after
+// a longer one representing a larger value.
 func (uid L) Base62() string {
 	str := encode62(uid.Bytes())
 	return *(*string)(unsafe.Pointer(&str))

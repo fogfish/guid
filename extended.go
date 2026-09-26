@@ -289,29 +289,41 @@ func (uid X) Diff(b X) X {
 // The conversion is exact but it does not invent node identity: ⟨𝒍⟩ keeps the
 // 32 bits it had, the 26 bits X adds are zero, and so is the birthday bound of
 // the original value. Only values allocated by NewX carry a 58-bit node.
-func (uid *X) FromG(val G) {
+func (uid *X) FromG(val G) error {
 	*uid = makeX(val.Node(), val.Drift(), val.Time(), val.Seq())
+	return nil
 }
 
 // FromL casts a locally unique 64-bit value to this globally unique 128-bit
 // one by stamping it with the ⟨𝒍⟩ fraction of the clock.
-func (uid *X) FromL(clock Chronos, val L) {
+func (uid *X) FromL(clock Chronos, val L) error {
 	*uid = makeX(clock.Node(), val.Drift(), val.Time(), val.Seq())
+	return nil
 }
 
 // FromX casts a globally unique 128-bit value to this compact 96-bit one.
 //
-// The conversion is lossy: ⟨𝒍⟩ is truncated from 58 bits to the 32 that G
-// gives it, so two nodes that differ only above bit 32 collapse onto the same
-// G. The two types must not share a keyspace in any case, see X.
-func (uid *G) FromX(val X) {
+// The conversion is lossy: ⟨𝒍⟩ has to narrow from 58 bits to the 32 that G
+// gives it, and two nodes that differ only above bit 32 would collapse onto
+// the same G. Rather than let that collision happen silently, the cast fails
+// when val's node does not fit in 32 bits — the application has to resolve
+// the conflict, e.g. by reassigning the colliding node, before the two can
+// share a G keyspace. The two types must not share a keyspace in any case,
+// see X.
+func (uid *G) FromX(val X) error {
+	if n := val.Node(); n > maskNode {
+		return fmt.Errorf("node identity %#x of X does not fit the 32 bits of G", n)
+	}
+
 	*uid = makeG(val.Node(), val.Drift(), val.Time(), val.Seq())
+	return nil
 }
 
 // FromX casts a globally unique 128-bit value to this locally unique 64-bit
 // one by dropping the ⟨𝒍⟩ fraction.
-func (uid *L) FromX(val X) {
+func (uid *L) FromX(val X) error {
 	*uid = makeL(val.Drift(), val.Time(), val.Seq())
+	return nil
 }
 
 // Bytes encodes k-ordered value to byte slice.
@@ -364,7 +376,11 @@ func (uid X) String() string {
 
 const hexdigit = "0123456789abcdef"
 
-// Base62 encodes k-ordered value to lexicographically sortable base62 string
+// Base62 encodes k-ordered value to a lexicographically sortable base62
+// string. The output is zero-padded to a fixed width per type, which is what
+// makes it sortable: a positional numeral system only orders lexicographically
+// at a fixed width, since a shorter, unpadded string can otherwise sort after
+// a longer one representing a larger value.
 func (uid X) Base62() string {
 	str := encode62(uid[:])
 	return *(*string)(unsafe.Pointer(&str))
@@ -414,14 +430,32 @@ func (uid *X) Fold(n uint64, bytes []byte) {
 	*uid = joinX(hi, lo)
 }
 
+// validX reports whether buf carries the RFC 9562 version and variant fields
+// every value this package builds is spliced with, see splice. A decoder
+// checks it so that a corrupted or foreign payload that happens to be the
+// right length is not accepted as if NewX had produced it — the one guardrail
+// against garbage input this format admits; G and L carry no such marker, see
+// their own FromBytes and FromBase62.
+func validX(buf X) bool {
+	return buf[6]>>(8-bitsVer) == verX && buf[8]>>(8-bitsVar) == varX
+}
+
 // FromBytes decodes the value from its wire format. It is the inverse of
 // Bytes.
+//
+// The version and variant fields are checked, see FromString.
 func (uid *X) FromBytes(val []byte) error {
 	if len(val) != SizeX {
 		return fmt.Errorf("malformed k-order number: %v", val)
 	}
 
-	copy(uid[:], val)
+	var buf X
+	copy(buf[:], val)
+	if !validX(buf) {
+		return fmt.Errorf("not a RFC 9562 UUIDv8: %v", val)
+	}
+
+	*uid = buf
 	return nil
 }
 
@@ -448,7 +482,7 @@ func (uid *X) FromString(val string) error {
 		buf[i] = hi<<4 | lo
 	}
 
-	if buf[6]>>(8-bitsVer) != verX || buf[8]>>(8-bitsVar) != varX {
+	if !validX(buf) {
 		return fmt.Errorf("not a RFC 9562 UUIDv8: %v", val)
 	}
 
@@ -470,6 +504,8 @@ func unhex(c byte) byte {
 
 // FromBase62 decodes the value from the base62 string. It is the inverse of
 // Base62.
+//
+// The version and variant fields are checked, see FromString.
 func (uid *X) FromBase62(val string) error {
 	b, err := decode62([]byte(val))
 	if err != nil {
@@ -481,8 +517,13 @@ func (uid *X) FromBase62(val string) error {
 		return fmt.Errorf("malformed k-order number: %v", val)
 	}
 
-	*uid = X{}
-	copy(uid[SizeX-len(b):], b)
+	var buf X
+	copy(buf[SizeX-len(b):], b)
+	if !validX(buf) {
+		return fmt.Errorf("not a RFC 9562 UUIDv8: %v", val)
+	}
+
+	*uid = buf
 	return nil
 }
 

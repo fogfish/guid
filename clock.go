@@ -176,10 +176,17 @@ func WithNodeID(id uint64) Config {
 // the 58 bits X gives ⟨𝒍⟩. The four bytes a G reads are kept at the bottom of
 // the identity rather than at its top, so that the G a given variable names
 // does not depend on how wide the clock's node field happens to be.
+//
+// The variable must be set and defined, otherwise it panics.
 func WithNodeFromEnv() Config {
 	return func(clock *clock) {
+		val, ok := os.LookupEnv("CONFIG_GUID_NODE_ID")
+		if !ok || val == "" {
+			panic("guid: CONFIG_GUID_NODE_ID is not set")
+		}
+
 		h := sha256.New()
-		h.Write([]byte(os.Getenv("CONFIG_GUID_NODE_ID")))
+		h.Write([]byte(val))
 		hash := h.Sum(nil)
 
 		node := uint64(hash[0])<<24 | uint64(hash[1])<<16 | uint64(hash[2])<<8 | uint64(hash[3])
@@ -213,9 +220,23 @@ func WithNodeRandom() Config {
 
 // WithClock configures a custom timestamp generator function.
 //
-// The generator must be non-decreasing: it defines an ascending time domain,
-// the direction in which allocated values sort. Use WithClockDescending for a
-// generator that runs backwards.
+// The generator should be non-decreasing: it defines an ascending time domain,
+// the direction in which allocated values sort, and a wandering generator
+// costs Epoch its accuracy, see below. Use WithClockDescending for a generator
+// that runs backwards.
+//
+// "Should" rather than "must": ⟨𝒕,𝒔⟩ ordering itself does not depend on it.
+// Every clock — this one included — allocates through the same coupled
+// sequence (Algorithm 1 of doc/proof.md §3.2), which every call advances by
+// one, unconditionally; a generator reading may raise the sequence but can
+// never lower it, so values allocated from one Chronos strictly increase in
+// the order they were allocated regardless of what the generator returns —
+// repeating, decreasing, or constant. §3 and §7 of doc/proof.md prove this
+// for the general case and record it as the fix for a hazard earlier versions
+// of this library had. What a non-monotonic generator costs is accuracy, not
+// order: Epoch and Time report the sequence's high water mark until the
+// generator catches back up to it, which for a generator that never
+// decreases is immediately.
 //
 // The generator is assumed to yield unix nanoseconds. Epoch reads ⟨𝒕⟩ back on
 // that assumption; a generator in any other unit allocates ordered values but

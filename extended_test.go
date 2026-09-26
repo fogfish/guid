@@ -393,6 +393,32 @@ func TestCodecX(t *testing.T) {
 	})
 }
 
+// FromString checks the version and variant fields RFC 9562 fixes at their
+// known positions, the one guardrail against garbage input this format
+// admits (G and L carry no such marker, see FromBytes and FromBase62 on
+// those types). FromBytes and FromBase62 build the very same in-memory value
+// and must apply the same guardrail, or a corrupted or foreign payload that
+// happens to decode is accepted as if NewX had produced it.
+func TestFromBytesAndFromBase62XRejectWrongVersion(t *testing.T) {
+	c := guid.NewClock(guid.WithClockUnix())
+	a := guid.NewX(c)
+
+	corrupted := a.Bytes()
+	// flip the version nibble from 8 (verX) to 7, leaving the variant intact
+	corrupted[6] = (corrupted[6] &^ 0xf0) | (0x7 << 4)
+
+	var viaBytes guid.X
+	copy(viaBytes[:], corrupted)
+
+	_, ebin := fromBytesX(corrupted)
+	_, eb62 := fromBase62X(viaBytes.Base62())
+
+	it.Then(t).ShouldNot(
+		it.Nil(ebin),
+		it.Nil(eb62),
+	)
+}
+
 func TestJSONCodecX(t *testing.T) {
 	type Struct struct {
 		ID guid.X `json:"id"`
@@ -497,10 +523,11 @@ func TestCastX(t *testing.T) {
 		)
 
 		a := guid.NewX(c)
-		g := gFromX(a)
+		g, err := gFromX(a)
 		l := lFromX(a)
 
 		it.Then(t).Should(
+			it.Nil(err),
 			it.Equal(g.Time(), a.Time()),
 			it.Equal(g.Seq(), a.Seq()),
 			it.Equal(g.Node(), a.Node()),
@@ -515,20 +542,43 @@ func TestCastX(t *testing.T) {
 	}
 }
 
-// the cast to G is lossy above bit 32 of ⟨𝒍⟩, and says so
-func TestCastXTruncates(t *testing.T) {
+// A node identity wider than 32 bits cannot be represented by G: two distinct
+// X nodes that differ only above bit 32, e.g. 1 and 0x100000001, would
+// otherwise truncate onto the same G node and collide. FromX refuses the cast
+// with an error instead, leaving the resolution to the application.
+func TestCastXNodeOverflow(t *testing.T) {
 	c := guid.NewClock(
 		guid.WithNodeID(maskNodeX),
 		guid.WithClockUnix(),
 	)
 
 	a := guid.NewX(c)
+	g, err := gFromX(a)
 
 	it.Then(t).Should(
 		it.Equal(a.Node(), maskNodeX),
-		it.Equal(gFromX(a).Node(), 0xffffffff),
+		it.Equal(g, guid.G{}),
 	).ShouldNot(
-		it.Equal(xFromG(gFromX(a)), a),
+		it.Nil(err),
+	)
+}
+
+// The exact collision the guardrail exists for: two X values whose node
+// identities differ only above bit 32 must not silently cast to the same G.
+func TestCastXNodeOverflowCollision(t *testing.T) {
+	c1 := guid.NewClock(guid.WithNodeID(1), guid.WithClockUnix())
+	c2 := guid.NewClock(guid.WithNodeID(0x100000001), guid.WithClockUnix())
+
+	a := guid.NewX(c1)
+	b := guid.NewX(c2)
+
+	_, erra := gFromX(a)
+	_, errb := gFromX(b)
+
+	it.Then(t).Should(
+		it.Nil(erra),
+	).ShouldNot(
+		it.Nil(errb),
 	)
 }
 

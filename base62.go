@@ -28,6 +28,14 @@ var (
 	decoder = [256]byte{255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 255, 255, 255, 255, 255, 255, 255, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 255, 255, 255, 255, 255, 255, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255}
 )
 
+// encode62 renders src, a fixed-size big-endian number, as a fixed-width
+// base62 string: exactly cs digits for every value of that width, the zero
+// value included, so that lexicographic string order agrees with the numeric
+// order of src. A positional numeral system only has that property at a
+// fixed width — stripping the leading zero digits of a smaller value, as a
+// plain "shortest representation" encoder would, makes the string shorter
+// rather than smaller, and a shorter string can sort after a longer one
+// (e.g. "10" < "z" though the values are 62 and 61).
 func encode62(src []byte) []byte {
 	rs := 0
 	cs := int(math.Ceil(math.Log(256) / math.Log(62) * float64(len(src))))
@@ -45,9 +53,6 @@ func encode62(src []byte) []byte {
 	}
 	for i := range dst {
 		dst[i] = encoder[dst[i]]
-	}
-	if cs > rs {
-		return dst[cs-rs:]
 	}
 	return dst
 }
