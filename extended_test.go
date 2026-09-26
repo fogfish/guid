@@ -69,7 +69,7 @@ func TestZeroX(t *testing.T) {
 // bytes are not zero — the version and variant are present in every value
 func TestZeroXPrecedes(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(maskNodeX)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(maskNodeX))
 
 		it.Then(t).Should(
 			it.True(guid.ZeroX(c).Before(guid.NewX(c))),
@@ -129,7 +129,7 @@ func TestSpecX(t *testing.T) {
 
 	for _, d := range drifts {
 		for tc, expect := range spec {
-			c := guid.Clock.WithDrift(d).WithNodeID(maskNodeX).WithClock(func() uint64 { return tc })
+			c := guid.NewClock(guid.Clock, guid.WithDrift(d), guid.WithNodeID(maskNodeX), guid.WithClock(func() uint64 { return tc }))
 			a := guid.NewX(c)
 			b := guid.NewX(c)
 
@@ -150,7 +150,7 @@ func TestSpecX(t *testing.T) {
 
 func TestDiffX(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(maskNodeX)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(maskNodeX))
 
 		a := guid.NewX(c)
 		b := fromTimeX(c, a.Epoch().Add(-1*time.Hour))
@@ -184,7 +184,7 @@ func TestPropositionX(t *testing.T) {
 			node := rnd.Uint64() & maskNodeX
 			tc := rnd.Uint64()
 
-			c := guid.Clock.WithDrift(rung.drift).WithNodeID(node).WithClock(func() uint64 { return tc })
+			c := guid.NewClock(guid.Clock, guid.WithDrift(rung.drift), guid.WithNodeID(node), guid.WithClock(func() uint64 { return tc }))
 
 			// the sequencer hands out 𝑽 = 𝒙·2¹⁴ + 𝒔 with ⟨𝒔⟩ counting from 1
 			for seq := uint64(1); seq <= 2; seq++ {
@@ -245,7 +245,7 @@ func TestRFC9562(t *testing.T) {
 
 	for _, drift := range drifts {
 		for i := 0; i <= 57; i++ {
-			c := guid.Clock.WithDrift(drift).WithNodeID(1 << i)
+			c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(1<<i))
 
 			a := guid.NewX(c).Bytes()
 
@@ -268,7 +268,7 @@ func TestOrderTransparency(t *testing.T) {
 		rnd := rand.New(rand.NewSource(int64(rung.bits)))
 
 		for i := 0; i < trials; i++ {
-			c := guid.Clock.WithDrift(rung.drift).WithNodeID(rnd.Uint64()).WithClock(rnd.Uint64)
+			c := guid.NewClock(guid.Clock, guid.WithDrift(rung.drift), guid.WithNodeID(rnd.Uint64()), guid.WithClock(rnd.Uint64))
 
 			a, b := guid.NewX(c), guid.NewX(c)
 			pa, pb := payloadOf(a), payloadOf(b)
@@ -296,7 +296,7 @@ func payloadOf(uid guid.X) *big.Int {
 func TestCodecX(t *testing.T) {
 	for _, drift := range drifts {
 		for i := 0; i <= 57; i++ {
-			c := guid.Clock.WithDrift(drift).WithNodeID(1 << i)
+			c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(1<<i))
 
 			a := guid.NewX(c)
 
@@ -397,7 +397,7 @@ func TestJSONCodecX(t *testing.T) {
 	}
 
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(maskNodeX)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(maskNodeX))
 
 		a := Struct{ID: guid.NewX(c)}
 
@@ -426,7 +426,7 @@ func TestJSONCodecX(t *testing.T) {
 // the canonical UUID string is a fixed-width big-endian numeral, so it sorts
 // the way the value does
 func TestLexSortingX(t *testing.T) {
-	c := guid.Clock.WithNodeRandom()
+	c := guid.NewClock(guid.Clock, guid.WithNodeRandom())
 
 	seq := make([]guid.X, 0, 1000)
 	str := make([]string, 0, 1000)
@@ -447,7 +447,7 @@ func TestLexSortingX(t *testing.T) {
 // an external index that sorts the stored bytes orders the values correctly
 // without decoding them
 func TestMemcmpOrderingX(t *testing.T) {
-	c := guid.Clock.WithNodeRandom()
+	c := guid.NewClock(guid.Clock, guid.WithNodeRandom())
 
 	seq := make([]guid.X, 0, 1000)
 	for i := 0; i < 1000; i++ {
@@ -467,7 +467,7 @@ func TestMemcmpOrderingX(t *testing.T) {
 func TestDriftSegregatesX(t *testing.T) {
 	seq := make([]guid.X, 0, len(drifts))
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(maskNodeX)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(maskNodeX))
 		seq = append(seq, guid.NewX(c))
 	}
 
@@ -480,7 +480,7 @@ func TestDriftSegregatesX(t *testing.T) {
 
 func TestCastX(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
 
 		a := guid.NewX(c)
 		g, err := gFromX(a)
@@ -507,7 +507,7 @@ func TestCastX(t *testing.T) {
 // otherwise truncate onto the same G node and collide. FromX refuses the cast
 // with an error instead, leaving the resolution to the application.
 func TestCastXNodeOverflow(t *testing.T) {
-	c := guid.Clock.WithNodeID(maskNodeX)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(maskNodeX))
 
 	a := guid.NewX(c)
 	g, err := gFromX(a)
@@ -523,8 +523,8 @@ func TestCastXNodeOverflow(t *testing.T) {
 // The exact collision the guardrail exists for: two X values whose node
 // identities differ only above bit 32 must not silently cast to the same G.
 func TestCastXNodeOverflowCollision(t *testing.T) {
-	c1 := guid.Clock.WithNodeID(1)
-	c2 := guid.Clock.WithNodeID(0x100000001)
+	c1 := guid.NewClock(guid.Clock, guid.WithNodeID(1))
+	c2 := guid.NewClock(guid.Clock, guid.WithNodeID(0x100000001))
 
 	a := guid.NewX(c1)
 	b := guid.NewX(c2)
@@ -542,7 +542,7 @@ func TestCastXNodeOverflowCollision(t *testing.T) {
 func TestFromTimeX(t *testing.T) {
 	for _, order := range orders {
 		for _, drift := range drifts {
-			c := order.clock.WithDrift(drift).WithNodeID(maskNodeX)
+			c := guid.NewClock(order.clock, guid.WithDrift(drift), guid.WithNodeID(maskNodeX))
 			n := time.Now().Round(10 * time.Millisecond)
 
 			a := fromTimeX(c, n)
@@ -560,7 +560,7 @@ func TestFromTimeX(t *testing.T) {
 func TestEpochX(t *testing.T) {
 	for _, order := range orders {
 		for _, drift := range drifts {
-			c := order.clock.WithDrift(drift)
+			c := guid.NewClock(order.clock, guid.WithDrift(drift))
 
 			n := time.Now()
 			a := guid.NewX(c)

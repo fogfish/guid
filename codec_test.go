@@ -52,7 +52,7 @@ var (
 
 func TestCodecText(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift))
 
 		g, l, x := guid.NewG(c), guid.NewL(c), guid.NewX(c)
 
@@ -81,7 +81,7 @@ func TestCodecText(t *testing.T) {
 
 func TestCodecBinary(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift))
 
 		g, l, x := guid.NewG(c), guid.NewL(c), guid.NewX(c)
 
@@ -139,7 +139,7 @@ func TestCodecGob(t *testing.T) {
 // place, so this is the property that makes a discarded error recoverable
 // rather than silently corrupting the value that was already there.
 func TestDecodeKeepsDestinationOnError(t *testing.T) {
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 
 	g, l, x := guid.NewG(c), guid.NewL(c), guid.NewX(c)
 	wg, wl, wx := g, l, x
@@ -182,7 +182,7 @@ func TestDecodeInPlace(t *testing.T) {
 		Seq    guid.L
 	}
 
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 	x, g, l := guid.NewX(c), guid.NewG(c), guid.NewL(c)
 
 	var row Record

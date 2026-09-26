@@ -32,7 +32,7 @@ import (
 )
 
 func TestWithNodeID(t *testing.T) {
-	c := guid.Clock.WithNodeID(0xfedcba98)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xfedcba98))
 	a := guid.NewG(c)
 
 	it.Then(t).Should(
@@ -43,7 +43,7 @@ func TestWithNodeID(t *testing.T) {
 func TestWithNodeFromEnv(t *testing.T) {
 	os.Setenv("CONFIG_GUID_NODE_ID", "abc@go")
 
-	c := guid.Clock.WithNodeFromEnv()
+	c := guid.NewClock(guid.Clock, guid.WithNodeFromEnv())
 	a := guid.NewG(c)
 
 	it.Then(t).Should(
@@ -63,7 +63,7 @@ func TestWithNodeFromEnvRequiresVariable(t *testing.T) {
 		}
 	}()
 
-	guid.Clock.WithNodeFromEnv()
+	guid.NewClock(guid.Clock, guid.WithNodeFromEnv())
 }
 
 // Clock and Unclock take ⟨𝒍⟩ from CONFIG_GUID_NODE_ID when it is set,
@@ -103,7 +103,7 @@ func TestDefaultNodeFromEnv(t *testing.T) {
 }
 
 func TestWithNodeRand(t *testing.T) {
-	c := guid.Clock.WithNodeRandom()
+	c := guid.NewClock(guid.Clock, guid.WithNodeRandom())
 	a := guid.NewG(c)
 
 	it.Then(t).ShouldNot(
@@ -112,7 +112,7 @@ func TestWithNodeRand(t *testing.T) {
 }
 
 func TestWithClock(t *testing.T) {
-	c := guid.Clock.WithClock(func() uint64 { return 0xfedcba98 << 16 })
+	c := guid.NewClock(guid.Clock, guid.WithClock(func() uint64 { return 0xfedcba98 << 16 }))
 	a := guid.NewG(c)
 
 	it.Then(t).Should(
@@ -157,7 +157,7 @@ func TestWithClockInverse(t *testing.T) {
 func TestWithClockMonotonicRegardlessOfGenerator(t *testing.T) {
 	t.Run("SingleThreaded", func(t *testing.T) {
 		var n uint64
-		c := guid.Clock.WithClock(func() uint64 {
+		c := guid.NewClock(guid.Clock, guid.WithClock(func() uint64 {
 			n++
 			// jitters forward and back across a wide range, including a
 			// value (1_000_000) too small to ever move the tick forward
@@ -165,7 +165,7 @@ func TestWithClockMonotonicRegardlessOfGenerator(t *testing.T) {
 				return 1_000_000
 			}
 			return n * 1_000_000_000
-		})
+		}))
 
 		prev := guid.ZeroL(c)
 		for i := 0; i < 20000; i++ {
@@ -179,7 +179,7 @@ func TestWithClockMonotonicRegardlessOfGenerator(t *testing.T) {
 
 	t.Run("Concurrent", func(t *testing.T) {
 		// frozen ticker, forces ⟨𝒔⟩ carry-over
-		c := guid.Clock.WithClock(func() uint64 { return 42 })
+		c := guid.NewClock(guid.Clock, guid.WithClock(func() uint64 { return 42 }))
 
 		const workers = 16
 		const perWorker = 20000
@@ -214,7 +214,7 @@ func TestWithClockMonotonicRegardlessOfGenerator(t *testing.T) {
 }
 
 func TestWithMock(t *testing.T) {
-	c := guid.Mock.WithNodeID(0x0)
+	c := guid.NewClock(guid.Mock, guid.WithNodeID(0x0))
 	a := guid.NewG(c)
 	b := guid.NewG(c)
 
@@ -236,7 +236,7 @@ func TestWithCheckpointDeliversHighWaterMark(t *testing.T) {
 	var now uint64 = 1 << 40
 	ch := make(chan uint64, 1)
 
-	c := guid.Clock.WithNodeID(0x1).WithClock(func() uint64 { return atomic.LoadUint64(&now) }).WithCheckpoint(0, ch)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return atomic.LoadUint64(&now) }), guid.WithCheckpoint(0, ch))
 
 	var last uint64
 	for i := 0; i < 100; i++ {
@@ -261,7 +261,7 @@ func TestWithCheckpointNeverBlocksAllocation(t *testing.T) {
 	var now uint64 = 1 << 40
 	ch := make(chan uint64) // unbuffered and never drained
 
-	c := guid.Clock.WithClock(func() uint64 { return atomic.LoadUint64(&now) }).WithCheckpoint(0, ch)
+	c := guid.NewClock(guid.Clock, guid.WithClock(func() uint64 { return atomic.LoadUint64(&now) }), guid.WithCheckpoint(0, ch))
 
 	done := make(chan struct{})
 	go func() {
@@ -290,7 +290,7 @@ func TestWithSeedPreventsRestartRegression(t *testing.T) {
 	var now uint64 = 1 << 40
 	ch := make(chan uint64, 1)
 
-	before := guid.Clock.WithNodeID(0x1).WithClock(func() uint64 { return atomic.LoadUint64(&now) }).WithCheckpoint(0, ch)
+	before := guid.NewClock(guid.Clock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return atomic.LoadUint64(&now) }), guid.WithCheckpoint(0, ch))
 
 	var lastBefore guid.L
 	var checkpoint uint64
@@ -310,10 +310,10 @@ func TestWithSeedPreventsRestartRegression(t *testing.T) {
 	// off, as if NTP had just stepped it back across the restart
 	restarted := atomic.LoadUint64(&now) - uint64(60*time.Second)
 
-	withoutSeed := guid.Clock.WithNodeID(0x1).WithClock(func() uint64 { return restarted })
+	withoutSeed := guid.NewClock(guid.Clock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return restarted }))
 	afterNoSeed := guid.NewL(withoutSeed)
 
-	withSeed := guid.Clock.WithNodeID(0x1).WithClock(func() uint64 { return restarted }).WithSeed(checkpoint)
+	withSeed := guid.NewClock(guid.Clock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return restarted }), guid.WithSeed(checkpoint))
 	afterSeed := guid.NewL(withSeed)
 
 	it.Then(t).Should(
@@ -333,7 +333,7 @@ func TestWithSeedIsolatedFromSharedSequence(t *testing.T) {
 	// a seed near the top of the ⟨𝒕,𝒔⟩ range: if it ever reached the shared
 	// sequence, every other WithClockUnix clock in the process would be
 	// poisoned by it and report a wildly wrong Epoch.
-	poisoned := guid.Clock.WithSeed(^uint64(0) >> 1)
+	poisoned := guid.NewClock(guid.Clock, guid.WithSeed(^uint64(0)>>1))
 	_ = guid.NewL(poisoned)
 
 	c := guid.Clock
@@ -355,12 +355,12 @@ func TestWithSeedAndWithCheckpointComposeRegardlessOfOrder(t *testing.T) {
 	ticker := func() uint64 { return atomic.LoadUint64(&now) }
 
 	ch1 := make(chan uint64, 1)
-	seedThenCheckpoint := guid.Clock.WithClock(ticker).WithSeed(seed).WithCheckpoint(0, ch1)
+	seedThenCheckpoint := guid.NewClock(guid.Clock, guid.WithClock(ticker), guid.WithSeed(seed), guid.WithCheckpoint(0, ch1))
 
 	ch2 := make(chan uint64, 1)
-	checkpointThenSeed := guid.Clock.WithClock(ticker).WithCheckpoint(0, ch2).WithSeed(seed)
+	checkpointThenSeed := guid.NewClock(guid.Clock, guid.WithClock(ticker), guid.WithCheckpoint(0, ch2), guid.WithSeed(seed))
 
-	unseeded := guid.NewL(guid.Clock.WithClock(ticker))
+	unseeded := guid.NewL(guid.NewClock(guid.Clock, guid.WithClock(ticker)))
 	a := guid.NewL(seedThenCheckpoint)
 	b := guid.NewL(checkpointThenSeed)
 

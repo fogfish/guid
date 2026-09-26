@@ -160,7 +160,7 @@ func TestSpecG(t *testing.T) {
 
 	for _, d := range drifts {
 		for tc, expect := range spec {
-			c := guid.Clock.WithDrift(d).WithNodeID(0xffffffff).WithClock(func() uint64 { return tc })
+			c := guid.NewClock(guid.Clock, guid.WithDrift(d), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return tc }))
 			a := guid.NewG(c)
 			b := guid.NewG(c)
 
@@ -189,7 +189,7 @@ func TestSpecL(t *testing.T) {
 
 	for _, d := range drifts {
 		for tc, expect := range spec {
-			c := guid.Clock.WithDrift(d).WithNodeID(0xffffffff).WithClock(func() uint64 { return tc })
+			c := guid.NewClock(guid.Clock, guid.WithDrift(d), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return tc }))
 			a := guid.NewL(c)
 			b := guid.NewL(c)
 
@@ -208,7 +208,7 @@ func TestSpecL(t *testing.T) {
 
 func TestDiffG(t *testing.T) {
 	for i, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff).WithClock(func() uint64 { return 1 << 17 })
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return 1 << 17 }))
 
 		a := guid.NewG(c)
 		b := guid.NewG(c)
@@ -226,7 +226,7 @@ func TestDiffG(t *testing.T) {
 
 func TestDiffL(t *testing.T) {
 	for i, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff).WithClock(func() uint64 { return 1 << 17 })
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return 1 << 17 }))
 
 		a := guid.NewL(c)
 		b := guid.NewL(c)
@@ -242,7 +242,7 @@ func TestDiffL(t *testing.T) {
 
 func TestDiffGZero(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff).WithClock(func() uint64 { return 1 << 17 })
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return 1 << 17 }))
 
 		z := guid.ZeroG(c)
 		a := guid.NewG(c)
@@ -259,7 +259,7 @@ func TestDiffGZero(t *testing.T) {
 
 func TestDiffLZero(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff).WithClock(func() uint64 { return 1 << 17 })
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return 1 << 17 }))
 
 		z := guid.ZeroL(c)
 		a := guid.NewL(c)
@@ -275,7 +275,7 @@ func TestDiffLZero(t *testing.T) {
 
 func TestCastGFromL(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
 
 		a := guid.NewL(c)
 		b := gFromL(c, a)
@@ -290,7 +290,7 @@ func TestCastGFromL(t *testing.T) {
 
 func TestCastLFromG(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
 
 		a := guid.NewG(c)
 		b := lFromG(a)
@@ -305,7 +305,7 @@ func TestCastLFromG(t *testing.T) {
 // casting is an isomorphism on the ⟨𝒕,𝒔⟩ fraction
 func TestCastRoundTrip(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
 
 		a := guid.NewG(c)
 		b := gFromL(c, lFromG(a))
@@ -318,7 +318,7 @@ func TestCastRoundTrip(t *testing.T) {
 
 func TestCodecG(t *testing.T) {
 	for i := 0; i <= 31; i++ {
-		c := guid.Clock.WithNodeID(1 << i)
+		c := guid.NewClock(guid.Clock, guid.WithNodeID(1<<i))
 
 		a := guid.NewG(c)
 
@@ -358,7 +358,7 @@ func TestCodecG(t *testing.T) {
 
 func TestCodecL(t *testing.T) {
 	for _, drift := range drifts {
-		c := guid.Clock.WithDrift(drift).WithNodeID(0xffffffff)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
 
 		a := guid.NewL(c)
 
@@ -409,7 +409,7 @@ var orders = []struct {
 func TestFromTimeL(t *testing.T) {
 	for _, order := range orders {
 		for _, drift := range drifts {
-			c := order.clock.WithDrift(drift)
+			c := guid.NewClock(order.clock, guid.WithDrift(drift))
 			n := time.Now().Round(10 * time.Millisecond)
 
 			a := fromTimeL(c, n)
@@ -426,7 +426,7 @@ func TestFromTimeL(t *testing.T) {
 func TestFromTimeG(t *testing.T) {
 	for _, order := range orders {
 		for _, drift := range drifts {
-			c := order.clock.WithDrift(drift).WithNodeID(0xffffffff)
+			c := guid.NewClock(order.clock, guid.WithDrift(drift), guid.WithNodeID(0xffffffff))
 			n := time.Now().Round(10 * time.Millisecond)
 
 			a := fromTimeG(c, n)
@@ -471,8 +471,8 @@ func TestEpoch(t *testing.T) {
 	n := time.Now().Round(10 * time.Millisecond)
 
 	for _, c := range []guid.Chronos{
-		guid.Clock.WithClock(func() uint64 { return uint64(n.UnixNano()) }),
-		guid.Unclock.WithClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }),
+		guid.NewClock(guid.Clock, guid.WithClock(func() uint64 { return uint64(n.UnixNano()) })),
+		guid.NewClock(guid.Unclock, guid.WithClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) })),
 	} {
 		a := guid.NewG(c)
 		b := guid.NewL(c)
@@ -493,8 +493,8 @@ func TestEpochDomainBoundary(t *testing.T) {
 		time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC),
 		time.Date(2262, 4, 11, 0, 0, 0, 0, time.UTC),
 	} {
-		asc := guid.Clock.WithClock(func() uint64 { return uint64(n.UnixNano()) })
-		dsc := guid.Unclock.WithClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) })
+		asc := guid.NewClock(guid.Clock, guid.WithClock(func() uint64 { return uint64(n.UnixNano()) }))
+		dsc := guid.NewClock(guid.Unclock, guid.WithClock(func() uint64 { return 0xffffffffffffffff - uint64(n.UnixNano()) }))
 
 		// time.Unix reports in the local zone, normalise before comparing
 		it.Then(t).Should(
@@ -505,7 +505,7 @@ func TestEpochDomainBoundary(t *testing.T) {
 }
 
 func TestLexSorting(t *testing.T) {
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 
 	a := guid.NewG(c).String()
 	b := guid.NewG(c).String()
@@ -526,7 +526,7 @@ func TestLexSorting(t *testing.T) {
 }
 
 func TestLexSortingBase62(t *testing.T) {
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 
 	a := guid.NewG(c).Base62()
 	b := guid.NewG(c).Base62()
@@ -567,7 +567,7 @@ func TestBase62FixedWidthPreservesOrder(t *testing.T) {
 // G is stored in the representation its order is defined in, memcmp over the
 // raw bytes is therefore a valid comparator.
 func TestMemcmpOrdering(t *testing.T) {
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 
 	seq := make([]guid.G, 1024)
 	for i := range seq {
@@ -589,7 +589,7 @@ func TestMemcmpOrdering(t *testing.T) {
 }
 
 func TestSplit(t *testing.T) {
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 
 	a := guid.NewG(c)
 	b := guid.NewL(c)
@@ -608,7 +608,7 @@ func TestJSONCodec(t *testing.T) {
 		L guid.L `json:"l"`
 	}
 
-	c := guid.Clock.WithNodeID(0xffffffff)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 	val := MyStruct{G: guid.NewG(c), L: guid.NewL(c)}
 	b, _ := json.Marshal(val)
 

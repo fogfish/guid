@@ -1120,8 +1120,8 @@ the data — at the call site, where it varies most easily. v3 binds it to the
 clock instead: `WithDrift` configures it, [`Chronos.Drift`](../clock.go#L56)
 reports it, and `NewG` / `NewL` read it from there. One clock is therefore one
 drift by construction, and (A1) reduces to a statement about clocks:
-`guid.NewClock(guid.WithDrift(guid.Drift17s))` and
-`guid.NewClock(guid.WithDrift(guid.Drift1099s))` must not feed one keyspace.
+`guid.NewClock(guid.Clock, guid.WithDrift(guid.Drift17s))` and
+`guid.NewClock(guid.Clock, guid.WithDrift(guid.Drift1099s))` must not feed one keyspace.
 The library cannot enforce that across processes, so (A1) remains an
 assumption — but it is no longer one an allocation can violate on its own.
 

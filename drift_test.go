@@ -90,7 +90,7 @@ func TestDriftOf(t *testing.T) {
 // both types and survives every conversion between them.
 func TestDriftOfValue(t *testing.T) {
 	for _, rung := range ladder {
-		c := guid.Clock.WithDrift(rung.drift).WithNodeID(0xffffffff).WithClock(func() uint64 { return 1 << 40 })
+		c := guid.NewClock(guid.Clock, guid.WithDrift(rung.drift), guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return 1 << 40 }))
 
 		g := guid.NewG(c)
 		l := guid.NewL(c)
@@ -114,7 +114,7 @@ func TestDriftOfValue(t *testing.T) {
 func TestDriftSegregates(t *testing.T) {
 	seq := make([]guid.G, 0, len(ladder))
 	for _, rung := range ladder {
-		c := guid.Clock.WithDrift(rung.drift).WithNodeID(0xffffffff)
+		c := guid.NewClock(guid.Clock, guid.WithDrift(rung.drift), guid.WithNodeID(0xffffffff))
 		seq = append(seq, guid.NewG(c))
 	}
 
@@ -143,7 +143,7 @@ func TestPropositionG(t *testing.T) {
 			node := rnd.Uint64() & 0xffffffff
 			tc := rnd.Uint64()
 
-			c := guid.Clock.WithDrift(rung.drift).WithNodeID(node).WithClock(func() uint64 { return tc })
+			c := guid.NewClock(guid.Clock, guid.WithDrift(rung.drift), guid.WithNodeID(node), guid.WithClock(func() uint64 { return tc }))
 
 			// the sequencer hands out 𝑽 = 𝒙·2¹⁴ + 𝒔 with ⟨𝒔⟩ counting from 1
 			for seq := uint64(1); seq <= 2; seq++ {
@@ -172,7 +172,7 @@ func TestPropositionL(t *testing.T) {
 		for i := 0; i < trials; i++ {
 			tc := rnd.Uint64()
 
-			c := guid.Clock.WithDrift(rung.drift).WithClock(func() uint64 { return tc })
+			c := guid.NewClock(guid.Clock, guid.WithDrift(rung.drift), guid.WithClock(func() uint64 { return tc }))
 
 			// the sequencer hands out 𝑽 = 𝒙·2¹⁴ + 𝒔 with ⟨𝒔⟩ counting from 1
 			for seq := uint64(1); seq <= 2; seq++ {

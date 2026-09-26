@@ -152,10 +152,10 @@ func location() guid.Chronos {
 	})
 
 	if given {
-		return guid.Clock.WithNodeID(*node)
+		return guid.NewClock(guid.Clock, guid.WithNodeID(*node))
 	}
 
-	return guid.Clock.WithNodeRandom()
+	return guid.NewClock(guid.Clock, guid.WithNodeRandom())
 }
 
 // sleep waits a random interval in (0, max], and not at all for a max of zero.

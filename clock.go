@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"io"
 	"os"
-	"sync/atomic"
 	"time"
 )
 
@@ -85,17 +84,14 @@ type Chronos interface {
 // the deployment sets it, so every process that sets the same value gets the
 // same stable node identity, and a random one otherwise. Mock's is ⟨0⟩.
 //
-// Each is configurable in place, in the sense that every WithXXX method
-// returns a new, independently configured clock rather than mutating the
-// receiver — so an application can derive its own clock straight from one of
-// these three (guid.Clock.WithNodeID(x)) without either global ever
-// reflecting that configuration back to any other caller. See WithSeed and
-// WithCheckpoint for the one option that also gives the derived clock a
-// private ⟨𝒕,𝒔⟩ sequence rather than the one Clock/Unclock share process-wide.
+// All three are plain, already-resolved values — T reads a field, nothing
+// more. An application that wants its own node identity, drift or ticker
+// does not configure one of these in place; it derives a new Chrono from one
+// with NewClock, see below.
 var (
 	Clock   = newDefaultClock(unixtime, ForwardTime, seqAscending)
 	Unclock = newDefaultClock(inversetime, InverseTime, seqDescending)
-	Mock    = &Chrono{order: ForwardTime, drift: driftDefault, mock: true, advance: new(atomic.Pointer[func(uint64) uint64])}
+	Mock    = &Chrono{order: ForwardTime, drift: driftDefault, mock: true}
 )
 
 func newDefaultClock(ticker func() uint64, order TimeOrder, shared *sequence) *Chrono {
@@ -104,9 +100,19 @@ func newDefaultClock(ticker func() uint64, order TimeOrder, shared *sequence) *C
 		drift:    driftDefault,
 		order:    order,
 		ticker:   ticker,
-		shared:   shared,
-		advance:  new(atomic.Pointer[func(uint64) uint64]),
+		seq:      shared,
+		advance:  advanceFor(shared, order),
 	}
+}
+
+// advanceFor picks next or prev according to order — the one place both
+// newDefaultClock and clockConfig.build decide it, so the two can never
+// disagree about which end of a sequence a given direction draws from.
+func advanceFor(seq *sequence, order TimeOrder) func(uint64) uint64 {
+	if order == InverseTime {
+		return seq.prev
+	}
+	return seq.next
 }
 
 func randomNode() uint64 {
@@ -121,174 +127,6 @@ func randomNode() uint64 {
 		node = node | uint64(v)<<(64-8*(i+1))
 	}
 	return node & maskNodeX
-}
-
-// Chrono is the concrete Chronos every WithXXX method builds and returns.
-// Clock, Unclock and Mock are its three process-wide instances; an
-// application names the type itself only when it needs to hold a configured
-// clock in a variable or struct field before passing it on.
-type Chrono struct {
-	// Spatially unique identifier ⟨𝒍⟩
-	location uint64
-	// ⟨𝒅⟩ drift, the rung of the ladder, see Drift
-	drift Drift
-	// ⟨𝒐⟩ direction of the time domain
-	order TimeOrder
-	// mock pins T to ⟨0,0⟩ unconditionally, see Mock
-	mock bool
-	// Monotonically increasing logical clock ⟨𝒕⟩ generator
-	ticker func() uint64
-
-	// shared is the process-wide sequence this clock uses unless a private
-	// one is requested — nil once WithClock, WithSeed or WithCheckpoint has
-	// been called anywhere in this clock's fork chain.
-	shared *sequence
-
-	hasSeed bool
-	seed    uint64
-
-	hasCheckpoint bool
-	ckInterval    time.Duration
-	ckOut         chan<- uint64
-
-	// advance caches the outcome of resolve, below: the wrapped advance
-	// function built from whatever combination of WithSeed/WithCheckpoint
-	// this clock accumulated, regardless of the order they were called in.
-	// nil until first resolved. A pointer to an atomic.Pointer, not a plain
-	// one, for the same reason as sequence's fields further down this file:
-	// fork copies a Chrono by value, and an atomic type must never be
-	// copied after use — fork always replaces it with a fresh one, but a
-	// value field would still make that copy look, to go vet and to a
-	// future reader, like copying state that is live elsewhere.
-	advance *atomic.Pointer[func(uint64) uint64]
-}
-
-func (c *Chrono) Node() uint64 { return c.location }
-
-func (c *Chrono) Drift() Drift { return c.drift }
-
-func (c *Chrono) Order() TimeOrder { return c.order }
-
-// T allocates the ⟨𝒕,𝒔⟩ fraction of a k-ordered value.
-//
-// ⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as one atomic step, so that the pair
-// strictly increases with every call and values are ordered exactly as they
-// are allocated. See sequence for why the two cannot be drawn independently.
-func (c *Chrono) T() (uint64, uint64) {
-	if c.mock {
-		return 0, 0
-	}
-
-	advance := c.advance.Load()
-	if advance == nil {
-		advance = c.resolve()
-	}
-
-	v := (*advance)(c.ticker())
-	return v >> bitsSeq << bitsSeqDrift, v & maskSeq
-}
-
-// resolve settles this clock's sequence and advance function exactly once,
-// the first time it is needed, from whatever WithClock/WithSeed/WithCheckpoint
-// accumulated on the fork chain that produced this value. Resolving lazily
-// rather than at each WithXXX call is what lets those three compose in any
-// order: whichever is called last does not clobber what an earlier one in
-// the same chain set up, because none of them touch the sequence directly —
-// they only record intent, and resolve reads all of it together.
-//
-// Two goroutines racing here may both build a candidate — each seeding its
-// own throwaway private sequence — before one wins the CompareAndSwap; the
-// loser's sequence was never handed to any allocator, so discarding it is
-// exactly as safe as sequence.seed's contract requires. There is no lock:
-// the redundant work of losing the race is cheaper than blocking on one.
-func (c *Chrono) resolve() *func(uint64) uint64 {
-	seq := c.shared
-	if seq == nil {
-		if c.order == InverseTime {
-			seq = descending()
-		} else {
-			seq = &sequence{}
-		}
-	}
-
-	if c.hasSeed {
-		seq.seed(c.seed)
-	}
-
-	advance := seq.next
-	if c.order == InverseTime {
-		advance = seq.prev
-	}
-
-	if c.hasCheckpoint {
-		advance = withCheckpoint(advance, c.ckOut, c.ckInterval)
-	}
-
-	if c.advance.CompareAndSwap(nil, &advance) {
-		return &advance
-	}
-	return c.advance.Load()
-}
-
-// fork copies the receiver so that every WithXXX method returns a new clock
-// instead of mutating the one it was called on. This is what makes
-// configuring guid.Clock or guid.Unclock directly safe: neither global is
-// ever touched, no matter how a caller configures the value it gets back.
-func (c *Chrono) fork() *Chrono {
-	cp := *c
-	cp.advance = new(atomic.Pointer[func(uint64) uint64])
-	return &cp
-}
-
-// WithDrift configures ⟨𝒅⟩, the failover budget the k-ordering absorbs.
-//
-// The ladder has eight rungs, from Drift131us to Drift39h, and defaults to
-// Drift275s. A larger drift attributes a longer overlap, a smaller one yields
-// a tighter k. Use DriftOf to select the rung that covers a budget expressed
-// as a duration:
-//
-//	guid.Clock.WithDrift(guid.Drift17s)
-//	guid.Clock.WithDrift(guid.DriftOf(45 * time.Second))
-//
-// Every clock of a keyspace must be configured with the same drift, otherwise
-// values are ordered by their drift rather than by their time.
-func (c *Chrono) WithDrift(drift Drift) *Chrono {
-	cp := c.fork()
-	cp.drift = drift & maskDrift
-	return cp
-}
-
-// WithNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier.
-//
-// The identifier is truncated to 58 bits, the width X gives it. A value of G
-// keeps only its low 32 bits, so an identity meant for both types has to fit
-// the narrower one.
-func (c *Chrono) WithNodeID(id uint64) *Chrono {
-	cp := c.fork()
-	cp.location = id & maskNodeX
-	return cp
-}
-
-// WithNodeFromEnv configures ⟨𝒍⟩ spatially unique identifier using env variable.
-//
-// CONFIG_GUID_NODE_ID - defines location id as a string
-//
-// The identity is the leading bytes of the SHA-256 of the variable, taken to
-// the 58 bits X gives ⟨𝒍⟩. The four bytes a G reads are kept at the bottom of
-// the identity rather than at its top, so that the G a given variable names
-// does not depend on how wide the clock's node field happens to be.
-//
-// The variable must be set and defined, otherwise it panics. See defaultNode
-// for the fallback Clock and Unclock use instead of panicking.
-func (c *Chrono) WithNodeFromEnv() *Chrono {
-	val, ok := os.LookupEnv("CONFIG_GUID_NODE_ID")
-	if !ok || val == "" {
-		panic("guid: CONFIG_GUID_NODE_ID is not set")
-	}
-
-	cp := c.fork()
-	cp.location = nodeFromEnvValue(val)
-	return cp
 }
 
 func nodeFromEnvValue(val string) uint64 {
@@ -315,6 +153,205 @@ func defaultNode() uint64 {
 	return randomNode()
 }
 
+func unixtime() uint64 {
+	return uint64(time.Now().UnixNano())
+}
+
+func inversetime() uint64 {
+	return 0xffffffffffffffff - uint64(time.Now().UnixNano())
+}
+
+// Chrono is the concrete Chronos NewClock returns. Clock, Unclock and Mock
+// are its three process-wide instances; an application names the type
+// itself only when it needs to hold a configured clock in a variable or
+// struct field before passing it on, or before deriving further from it.
+//
+// A Chrono is inert once built: nothing here is ever mutated after NewClock
+// returns it, so T needs no synchronization of its own beyond whatever the
+// sequence it draws from already provides.
+type Chrono struct {
+	// Spatially unique identifier ⟨𝒍⟩
+	location uint64
+	// ⟨𝒅⟩ drift, the rung of the ladder, see Drift
+	drift Drift
+	// ⟨𝒐⟩ direction of the time domain
+	order TimeOrder
+	// mock pins T to ⟨0,0⟩ unconditionally, see Mock
+	mock bool
+	// Monotonically increasing logical clock ⟨𝒕⟩ generator
+	ticker func() uint64
+	// seq is the sequence this clock actually draws from — the process-wide
+	// one Clock/Unclock share, or a private one WithClock/WithSeed/
+	// WithCheckpoint requested. NewClock reads it back from a seed so that a
+	// clock derived from another shares its sequence by default, the same
+	// rule Clock/Unclock themselves follow.
+	seq *sequence
+	// advance is resolved once, by NewClock, before this value ever exists
+	// where anything could call T on it — never lazily, never touched again.
+	advance func(uint64) uint64
+}
+
+func (c *Chrono) Node() uint64 { return c.location }
+
+func (c *Chrono) Drift() Drift { return c.drift }
+
+func (c *Chrono) Order() TimeOrder { return c.order }
+
+// T allocates the ⟨𝒕,𝒔⟩ fraction of a k-ordered value.
+//
+// ⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as one atomic step, so that the pair
+// strictly increases with every call and values are ordered exactly as they
+// are allocated. See sequence for why the two cannot be drawn independently.
+func (c *Chrono) T() (uint64, uint64) {
+	if c.mock {
+		return 0, 0
+	}
+
+	v := c.advance(c.ticker())
+	return v >> bitsSeq << bitsSeqDrift, v & maskSeq
+}
+
+// Config is a functional option NewClock applies when deriving a Chrono from
+// a seed. See WithDrift, WithNodeID, WithNodeRandom, WithNodeFromEnv,
+// WithClock, WithSeed and WithCheckpoint.
+type Config func(*clockConfig)
+
+// clockConfig accumulates what NewClock's options ask for before it is
+// resolved, once, into the Chrono they describe. It is not exported: an
+// application configures a clock by calling NewClock with Config values,
+// never by naming this type.
+type clockConfig struct {
+	location uint64
+	drift    Drift
+	order    TimeOrder
+	mock     bool
+	ticker   func() uint64
+
+	// shared is the sequence this clock uses unless some option below
+	// forces a private one. It starts as the seed's own sequence — see
+	// NewClock — so sharing is inherited by default and privacy is always
+	// an explicit opt-in, never the other way around.
+	shared *sequence
+
+	hasSeed bool
+	seed    uint64
+
+	hasCheckpoint bool
+	ckInterval    time.Duration
+	ckOut         chan<- uint64
+}
+
+// NewClock derives a new Chrono from seed, applying every opt in order and
+// resolving the result once before returning it — there is no separate
+// build step, and nothing about the result depends on what order opts were
+// given: WithSeed and WithCheckpoint each just record intent, and NewClock
+// reads all of it back together at the end.
+//
+// The seed is mandatory. It is usually Clock or Unclock — the two the
+// library provides — but can be any Chrono, including one NewClock already
+// produced: unless an opt forces privacy (WithClock, WithSeed,
+// WithCheckpoint), the result shares seed's own sequence, the same rule
+// Clock and Unclock themselves follow. That makes sharing recursive by
+// default rather than something only the two globals get.
+//
+//	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
+//	h := guid.NewClock(guid.Clock, guid.WithSeed(restored), guid.WithCheckpoint(2*time.Second, ch))
+func NewClock(seed *Chrono, opts ...Config) *Chrono {
+	cfg := &clockConfig{
+		location: seed.location,
+		drift:    seed.drift,
+		order:    seed.order,
+		mock:     seed.mock,
+		ticker:   seed.ticker,
+		shared:   seed.seq,
+	}
+
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	return cfg.build()
+}
+
+func (cfg *clockConfig) build() *Chrono {
+	if cfg.mock {
+		return &Chrono{location: cfg.location, drift: cfg.drift, order: ForwardTime, mock: true}
+	}
+
+	seq := cfg.shared
+	if seq == nil {
+		if cfg.order == InverseTime {
+			seq = descending()
+		} else {
+			seq = &sequence{}
+		}
+	}
+
+	if cfg.hasSeed {
+		seq.seed(cfg.seed)
+	}
+
+	advance := advanceFor(seq, cfg.order)
+	if cfg.hasCheckpoint {
+		advance = withCheckpoint(advance, cfg.ckOut, cfg.ckInterval)
+	}
+
+	return &Chrono{
+		location: cfg.location,
+		drift:    cfg.drift,
+		order:    cfg.order,
+		ticker:   cfg.ticker,
+		seq:      seq,
+		advance:  advance,
+	}
+}
+
+// WithDrift configures ⟨𝒅⟩, the failover budget the k-ordering absorbs.
+//
+// The ladder has eight rungs, from Drift131us to Drift39h, and defaults to
+// Drift275s. A larger drift attributes a longer overlap, a smaller one yields
+// a tighter k. Use DriftOf to select the rung that covers a budget expressed
+// as a duration:
+//
+//	guid.NewClock(guid.Clock, guid.WithDrift(guid.Drift17s))
+//	guid.NewClock(guid.Clock, guid.WithDrift(guid.DriftOf(45 * time.Second)))
+//
+// Every clock of a keyspace must be configured with the same drift, otherwise
+// values are ordered by their drift rather than by their time.
+func WithDrift(drift Drift) Config {
+	return func(cfg *clockConfig) { cfg.drift = drift & maskDrift }
+}
+
+// WithNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier.
+//
+// The identifier is truncated to 58 bits, the width X gives it. A value of G
+// keeps only its low 32 bits, so an identity meant for both types has to fit
+// the narrower one.
+func WithNodeID(id uint64) Config {
+	return func(cfg *clockConfig) { cfg.location = id & maskNodeX }
+}
+
+// WithNodeFromEnv configures ⟨𝒍⟩ spatially unique identifier using env variable.
+//
+// CONFIG_GUID_NODE_ID - defines location id as a string
+//
+// The identity is the leading bytes of the SHA-256 of the variable, taken to
+// the 58 bits X gives ⟨𝒍⟩. The four bytes a G reads are kept at the bottom of
+// the identity rather than at its top, so that the G a given variable names
+// does not depend on how wide the clock's node field happens to be.
+//
+// The variable must be set and defined, otherwise it panics. See defaultNode
+// for the fallback Clock and Unclock use instead of panicking.
+func WithNodeFromEnv() Config {
+	return func(cfg *clockConfig) {
+		val, ok := os.LookupEnv("CONFIG_GUID_NODE_ID")
+		if !ok || val == "" {
+			panic("guid: CONFIG_GUID_NODE_ID is not set")
+		}
+		cfg.location = nodeFromEnvValue(val)
+	}
+}
+
 // WithNodeRandom configures ⟨𝒍⟩ spatially unique identifier using cryptographic random generator.
 //
 // The identity is 58 random bits, which is what makes the allocator
@@ -325,25 +362,15 @@ func defaultNode() uint64 {
 // Clock and Unclock already carry ⟨𝒍⟩ from defaultNode — CONFIG_GUID_NODE_ID
 // when it is set, random otherwise; WithNodeRandom is for re-rolling a random
 // one explicitly, overriding whichever of the two a derived value inherited.
-func (c *Chrono) WithNodeRandom() *Chrono {
-	cp := c.fork()
-	cp.location = randomNode()
-	return cp
-}
-
-func unixtime() uint64 {
-	return uint64(time.Now().UnixNano())
-}
-
-func inversetime() uint64 {
-	return 0xffffffffffffffff - uint64(time.Now().UnixNano())
+func WithNodeRandom() Config {
+	return func(cfg *clockConfig) { cfg.location = randomNode() }
 }
 
 // WithClock overrides the timestamp generator with a custom ticker, keeping
 // the direction (and so the ascending/descending choice of next/prev) of
-// whatever clock it is called on — guid.Clock.WithClock(...) is ascending,
-// guid.Unclock.WithClock(...) is descending, and there is no separate
-// "descending" constructor: forking from Unclock already is one.
+// whatever seed NewClock was given — guid.NewClock(guid.Clock, ...) stays
+// ascending, guid.NewClock(guid.Unclock, ...) stays descending, and there is
+// no separate "descending" option: seeding from Unclock already is one.
 //
 // The generator should be non-decreasing: it defines the direction in which
 // allocated values sort, and a wandering generator costs Epoch its accuracy,
@@ -369,11 +396,11 @@ func inversetime() uint64 {
 // library cannot know whether a custom generator shares a time domain with
 // any other clock. Values allocated from two such clocks are therefore
 // unique only if the clocks also carry distinct ⟨𝒍⟩ node identity.
-func (c *Chrono) WithClock(ticker func() uint64) *Chrono {
-	cp := c.fork()
-	cp.ticker = ticker
-	cp.shared = nil
-	return cp
+func WithClock(ticker func() uint64) Config {
+	return func(cfg *clockConfig) {
+		cfg.ticker = ticker
+		cfg.shared = nil
+	}
 }
 
 // WithSeed configures the sequence's initial ⟨𝒕,𝒔⟩ high-water mark instead of
@@ -398,12 +425,12 @@ func (c *Chrono) WithClock(ticker func() uint64) *Chrono {
 // the shared default allocates from. This, like WithCheckpoint, is an option
 // for an operator who has already decided to take on that responsibility —
 // most applications never need either.
-func (c *Chrono) WithSeed(v uint64) *Chrono {
-	cp := c.fork()
-	cp.shared = nil
-	cp.hasSeed = true
-	cp.seed = v
-	return cp
+func WithSeed(v uint64) Config {
+	return func(cfg *clockConfig) {
+		cfg.hasSeed = true
+		cfg.seed = v
+		cfg.shared = nil
+	}
 }
 
 // WithCheckpoint arranges for the clock's ⟨𝒕,𝒔⟩ high-water mark to be sent to
@@ -425,16 +452,14 @@ func (c *Chrono) WithSeed(v uint64) *Chrono {
 // Like WithSeed, WithCheckpoint always forces a private sequence, so what it
 // reports is exactly the clock the caller configured, never a value folded
 // in from every other clock sharing a time domain's default sequence.
-// WithSeed and WithCheckpoint compose regardless of which is called first —
-// guid.Clock.WithSeed(v).WithCheckpoint(iv, ch) and
-// guid.Clock.WithCheckpoint(iv, ch).WithSeed(v) resolve to the same clock —
-// because neither touches the sequence itself until first use; they only
-// record what to do once, at that point, together.
-func (c *Chrono) WithCheckpoint(interval time.Duration, out chan<- uint64) *Chrono {
-	cp := c.fork()
-	cp.shared = nil
-	cp.hasCheckpoint = true
-	cp.ckInterval = interval
-	cp.ckOut = out
-	return cp
+// WithSeed and WithCheckpoint compose regardless of which is given first —
+// NewClock reads every opt's effect back together after all of them have
+// run, rather than resolving anything as each one is applied.
+func WithCheckpoint(interval time.Duration, out chan<- uint64) Config {
+	return func(cfg *clockConfig) {
+		cfg.hasCheckpoint = true
+		cfg.ckInterval = interval
+		cfg.ckOut = out
+		cfg.shared = nil
+	}
 }
