@@ -400,7 +400,7 @@ func TestCodecL(t *testing.T) {
 // domains are expected to round-trip the same instant through Epoch.
 var orders = []struct {
 	name  string
-	clock *guid.Chrono
+	clock *guid.Chronometer
 }{
 	{"ascending", guid.Clock},
 	{"descending", guid.Unclock},

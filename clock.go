@@ -91,11 +91,11 @@ type Chronos interface {
 var (
 	Clock   = newDefaultClock(unixtime, ForwardTime, seqAscending)
 	Unclock = newDefaultClock(inversetime, InverseTime, seqDescending)
-	Mock    = &Chrono{order: ForwardTime, drift: driftDefault, mock: true}
+	Mock    = &Chronometer{order: ForwardTime, drift: driftDefault, mock: true}
 )
 
-func newDefaultClock(ticker func() uint64, order TimeOrder, shared *sequence) *Chrono {
-	return &Chrono{
+func newDefaultClock(ticker func() uint64, order TimeOrder, shared *sequence) *Chronometer {
+	return &Chronometer{
 		location: defaultNode(),
 		drift:    driftDefault,
 		order:    order,
@@ -161,15 +161,15 @@ func inversetime() uint64 {
 	return 0xffffffffffffffff - uint64(time.Now().UnixNano())
 }
 
-// Chrono is the concrete Chronos NewClock returns. Clock, Unclock and Mock
+// Chronometer is the concrete Chronos NewClock returns. Clock, Unclock and Mock
 // are its three process-wide instances; an application names the type
 // itself only when it needs to hold a configured clock in a variable or
 // struct field before passing it on, or before deriving further from it.
 //
-// A Chrono is inert once built: nothing here is ever mutated after NewClock
+// A Chronometer is inert once built: nothing here is ever mutated after NewClock
 // returns it, so T needs no synchronization of its own beyond whatever the
 // sequence it draws from already provides.
-type Chrono struct {
+type Chronometer struct {
 	// Spatially unique identifier ⟨𝒍⟩
 	location uint64
 	// ⟨𝒅⟩ drift, the rung of the ladder, see Drift
@@ -191,18 +191,18 @@ type Chrono struct {
 	advance func(uint64) uint64
 }
 
-func (c *Chrono) Node() uint64 { return c.location }
+func (c *Chronometer) Node() uint64 { return c.location }
 
-func (c *Chrono) Drift() Drift { return c.drift }
+func (c *Chronometer) Drift() Drift { return c.drift }
 
-func (c *Chrono) Order() TimeOrder { return c.order }
+func (c *Chronometer) Order() TimeOrder { return c.order }
 
 // T allocates the ⟨𝒕,𝒔⟩ fraction of a k-ordered value.
 //
 // ⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as one atomic step, so that the pair
 // strictly increases with every call and values are ordered exactly as they
 // are allocated. See sequence for why the two cannot be drawn independently.
-func (c *Chrono) T() (uint64, uint64) {
+func (c *Chronometer) T() (uint64, uint64) {
 	if c.mock {
 		return 0, 0
 	}
@@ -214,13 +214,13 @@ func (c *Chrono) T() (uint64, uint64) {
 // Config is a functional option NewClock applies when deriving a Chrono from
 // a seed. See WithDrift, WithNodeID, WithNodeRandom, WithNodeFromEnv,
 // WithClock, WithSeed and WithCheckpoint.
-type Config func(*clockConfig)
+type Config func(*config)
 
-// clockConfig accumulates what NewClock's options ask for before it is
+// config accumulates what NewClock's options ask for before it is
 // resolved, once, into the Chrono they describe. It is not exported: an
 // application configures a clock by calling NewClock with Config values,
 // never by naming this type.
-type clockConfig struct {
+type config struct {
 	location uint64
 	drift    Drift
 	order    TimeOrder
@@ -241,23 +241,14 @@ type clockConfig struct {
 	ckOut         chan<- uint64
 }
 
-// NewClock derives a new Chrono from seed, applying every opt in order and
-// resolving the result once before returning it — there is no separate
-// build step, and nothing about the result depends on what order opts were
-// given: WithSeed and WithCheckpoint each just record intent, and NewClock
-// reads all of it back together at the end.
-//
-// The seed is mandatory. It is usually Clock or Unclock — the two the
-// library provides — but can be any Chrono, including one NewClock already
-// produced: unless an opt forces privacy (WithClock, WithSeed,
-// WithCheckpoint), the result shares seed's own sequence, the same rule
-// Clock and Unclock themselves follow. That makes sharing recursive by
-// default rather than something only the two globals get.
+// NewClock creates a clock for allocating k-ordered values from a seed clock.
+// The seed is mandatory. Use the default Clock or Unclock — the two the
+// library provides — but can be any Chronos.
 //
 //	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 //	h := guid.NewClock(guid.Clock, guid.WithSeed(restored), guid.WithCheckpoint(2*time.Second, ch))
-func NewClock(seed *Chrono, opts ...Config) *Chrono {
-	cfg := &clockConfig{
+func NewClock(seed *Chronometer, opts ...Config) *Chronometer {
+	cfg := &config{
 		location: seed.location,
 		drift:    seed.drift,
 		order:    seed.order,
@@ -273,9 +264,9 @@ func NewClock(seed *Chrono, opts ...Config) *Chrono {
 	return cfg.build()
 }
 
-func (cfg *clockConfig) build() *Chrono {
+func (cfg *config) build() *Chronometer {
 	if cfg.mock {
-		return &Chrono{location: cfg.location, drift: cfg.drift, order: ForwardTime, mock: true}
+		return &Chronometer{location: cfg.location, drift: cfg.drift, order: ForwardTime, mock: true}
 	}
 
 	seq := cfg.shared
@@ -296,7 +287,7 @@ func (cfg *clockConfig) build() *Chrono {
 		advance = withCheckpoint(advance, cfg.ckOut, cfg.ckInterval)
 	}
 
-	return &Chrono{
+	return &Chronometer{
 		location: cfg.location,
 		drift:    cfg.drift,
 		order:    cfg.order,
@@ -319,7 +310,7 @@ func (cfg *clockConfig) build() *Chrono {
 // Every clock of a keyspace must be configured with the same drift, otherwise
 // values are ordered by their drift rather than by their time.
 func WithDrift(drift Drift) Config {
-	return func(cfg *clockConfig) { cfg.drift = drift & maskDrift }
+	return func(cfg *config) { cfg.drift = drift & maskDrift }
 }
 
 // WithNodeID explicitly configures ⟨𝒍⟩ spatially unique identifier.
@@ -328,7 +319,7 @@ func WithDrift(drift Drift) Config {
 // keeps only its low 32 bits, so an identity meant for both types has to fit
 // the narrower one.
 func WithNodeID(id uint64) Config {
-	return func(cfg *clockConfig) { cfg.location = id & maskNodeX }
+	return func(cfg *config) { cfg.location = id & maskNodeX }
 }
 
 // WithNodeFromEnv configures ⟨𝒍⟩ spatially unique identifier using env variable.
@@ -343,7 +334,7 @@ func WithNodeID(id uint64) Config {
 // The variable must be set and defined, otherwise it panics. See defaultNode
 // for the fallback Clock and Unclock use instead of panicking.
 func WithNodeFromEnv() Config {
-	return func(cfg *clockConfig) {
+	return func(cfg *config) {
 		val, ok := os.LookupEnv("CONFIG_GUID_NODE_ID")
 		if !ok || val == "" {
 			panic("guid: CONFIG_GUID_NODE_ID is not set")
@@ -352,7 +343,8 @@ func WithNodeFromEnv() Config {
 	}
 }
 
-// WithNodeRandom configures ⟨𝒍⟩ spatially unique identifier using cryptographic random generator.
+// WithNodeRandom configures ⟨𝒍⟩ spatially unique identifier using cryptographic
+// random generator.
 //
 // The identity is 58 random bits, which is what makes the allocator
 // coordinator-free: the birthday bound is ≈ 5.4·10⁸ allocators for X. A G
@@ -363,7 +355,7 @@ func WithNodeFromEnv() Config {
 // when it is set, random otherwise; WithNodeRandom is for re-rolling a random
 // one explicitly, overriding whichever of the two a derived value inherited.
 func WithNodeRandom() Config {
-	return func(cfg *clockConfig) { cfg.location = randomNode() }
+	return func(cfg *config) { cfg.location = randomNode() }
 }
 
 // WithClock overrides the timestamp generator with a custom ticker, keeping
@@ -376,17 +368,12 @@ func WithNodeRandom() Config {
 // allocated values sort, and a wandering generator costs Epoch its accuracy,
 // see below.
 //
-// "Should" rather than "must": ⟨𝒕,𝒔⟩ ordering itself does not depend on it.
-// Every clock — this one included — allocates through the same coupled
-// sequence (Algorithm 1 of doc/proof.md §3.2), which every call advances by
-// one, unconditionally; a generator reading may raise the sequence but can
-// never lower it, so values allocated from one Chronos strictly increase in
-// the order they were allocated regardless of what the generator returns —
-// repeating, decreasing, or constant. §3 and §7 of doc/proof.md prove this
-// for the general case. What a non-monotonic generator costs is accuracy,
-// not order: Epoch and Time report the sequence's high water mark until the
-// generator catches back up to it, which for a generator that never
-// decreases is immediately.
+// ⟨𝒕,𝒔⟩ ordering itself does not depend on it. Every clock allocates through
+// the same coupled sequence, which every call advances by one, unconditionally;
+// a generator reading may raise the sequence but can never lower it, so values
+// allocated from one Chronos strictly increase in the order they were allocated
+// regardless of what the generator returns repeating, decreasing, or constant.
+// What a non-monotonic generator costs is accuracy, not order.
 //
 // The generator is assumed to yield unix nanoseconds. Epoch reads ⟨𝒕⟩ back on
 // that assumption; a generator in any other unit allocates ordered values but
@@ -397,7 +384,7 @@ func WithNodeRandom() Config {
 // any other clock. Values allocated from two such clocks are therefore
 // unique only if the clocks also carry distinct ⟨𝒍⟩ node identity.
 func WithClock(ticker func() uint64) Config {
-	return func(cfg *clockConfig) {
+	return func(cfg *config) {
 		cfg.ticker = ticker
 		cfg.shared = nil
 	}
@@ -407,10 +394,9 @@ func WithClock(ticker func() uint64) Config {
 // starting from zero, so a process resumes at or above where a previous one
 // — persisted via WithCheckpoint — left off, rather than resetting to zero.
 // That gap is what lets a restart coinciding with a backward clock step (an
-// NTP correction, almost always — not a DST change, which UnixNano never
-// sees) violate k-ordering: the in-process ratchet that already tolerates a
-// backward-stepping ticker (see WithClock) does not survive the process that
-// held it.
+// NTP correction) violate k-ordering: the in-process ratchet that already
+// tolerates a backward-stepping ticker (see WithClock) does not survive
+// the process that held it.
 //
 // The value is opaque: it is whatever WithCheckpoint delivered, fed back
 // unchanged, and it is only meaningful for a clock built with the same Drift
@@ -426,7 +412,7 @@ func WithClock(ticker func() uint64) Config {
 // for an operator who has already decided to take on that responsibility —
 // most applications never need either.
 func WithSeed(v uint64) Config {
-	return func(cfg *clockConfig) {
+	return func(cfg *config) {
 		cfg.hasSeed = true
 		cfg.seed = v
 		cfg.shared = nil
@@ -456,7 +442,7 @@ func WithSeed(v uint64) Config {
 // NewClock reads every opt's effect back together after all of them have
 // run, rather than resolving anything as each one is applied.
 func WithCheckpoint(interval time.Duration, out chan<- uint64) Config {
-	return func(cfg *clockConfig) {
+	return func(cfg *config) {
 		cfg.hasCheckpoint = true
 		cfg.ckInterval = interval
 		cfg.ckOut = out
