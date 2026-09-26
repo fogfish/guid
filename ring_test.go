@@ -110,7 +110,7 @@ func TestOrdRingPrimaryIsLeast(t *testing.T) {
 
 	uids := make([]guid.G, len(nodes))
 	for i, node := range nodes {
-		uids[i] = guid.NewG(guid.NewClockMock(guid.WithNodeID(node)))
+		uids[i] = guid.NewG(guid.Mock.WithNodeID(node))
 	}
 
 	// at every cut point, the least value is the first node clockwise of it
@@ -134,7 +134,7 @@ func TestOrdRingHasNoSeam(t *testing.T) {
 
 	uids := make([]guid.G, len(nodes))
 	for i, node := range nodes {
-		uids[i] = guid.NewG(guid.NewClockMock(guid.WithNodeID(node)))
+		uids[i] = guid.NewG(guid.Mock.WithNodeID(node))
 	}
 
 	natural := slices.Clone(uids)
@@ -182,10 +182,7 @@ func TestOrdRingKeepsRunsContiguous(t *testing.T) {
 	uids := make([]guid.G, 0, len(nodes)*8)
 	for n, node := range nodes {
 		tick := uint64(n) << bitsSeqDriftTest
-		clock := guid.NewClock(
-			guid.WithNodeID(node),
-			guid.WithClock(func() uint64 { return tick }),
-		)
+		clock := guid.Clock.WithNodeID(node).WithClock(func() uint64 { return tick })
 		for i := 0; i < 8; i++ {
 			uids = append(uids, guid.NewG(clock))
 		}
@@ -209,11 +206,8 @@ func TestOrdRingKeepsRunsContiguous(t *testing.T) {
 // ⟨𝑬⟩ outranks ⟨𝒍⟩ under the rotated order exactly as it does under Before:
 // rotation reaches inside an epoch and no further.
 func TestOrdRingEpochDominates(t *testing.T) {
-	early := guid.NewG(guid.NewClockMock(guid.WithNodeID(1 << 28)))
-	late := guid.NewG(guid.NewClockMock(
-		guid.WithNodeID(1<<4),
-		guid.WithClock(func() uint64 { return 1 << 60 }),
-	))
+	early := guid.NewG(guid.Mock.WithNodeID(1 << 28))
+	late := guid.NewG(guid.Clock.WithNodeID(1 << 4).WithClock(func() uint64 { return 1 << 60 }))
 
 	for _, ref := range []uint64{0, 1 << 4, 1 << 16, 1 << 28} {
 		ord := guid.OrdRingG(ref)
@@ -242,7 +236,7 @@ func TestOrdRingRefIsMaskedLikeNodeID(t *testing.T) {
 	nodes := []uint64{0x10, 0x1000, 0xC0000000, 0xFFFF0000}
 	uids := make([]guid.G, len(nodes))
 	for i, node := range nodes {
-		uids[i] = guid.NewG(guid.NewClockMock(guid.WithNodeID(node)))
+		uids[i] = guid.NewG(guid.Mock.WithNodeID(node))
 	}
 
 	wide := slices.Clone(uids)
@@ -257,7 +251,7 @@ func TestOrdRingRefIsMaskedLikeNodeID(t *testing.T) {
 	nodesX := []uint64{0x10, 0x1000, 0x0100000000000000, 0x03F0000000000000}
 	uidsX := make([]guid.X, len(nodesX))
 	for i, node := range nodesX {
-		uidsX[i] = guid.NewX(guid.NewClockMock(guid.WithNodeID(node)))
+		uidsX[i] = guid.NewX(guid.Mock.WithNodeID(node))
 	}
 
 	wideX := slices.Clone(uidsX)
@@ -304,11 +298,7 @@ func allocG(t *testing.T, drift guid.Drift, n int) []guid.G {
 
 	uids := make([]guid.G, 0, 4*n)
 	for i := 0; i < n; i++ {
-		clock := guid.NewClock(
-			guid.WithDrift(drift),
-			guid.WithNodeID(uint64(i)*0x9E3779B1),
-			guid.WithClock(ticker(drift, i)),
-		)
+		clock := guid.Clock.WithDrift(drift).WithNodeID(uint64(i) * 0x9E3779B1).WithClock(ticker(drift, i))
 		uids = append(uids, guid.NewG(clock), guid.NewG(clock), guid.NewG(clock), guid.NewG(clock))
 	}
 
@@ -325,11 +315,7 @@ func allocX(t *testing.T, drift guid.Drift, n int) []guid.X {
 
 	uids := make([]guid.X, 0, 4*n)
 	for i := 0; i < n; i++ {
-		clock := guid.NewClock(
-			guid.WithDrift(drift),
-			guid.WithNodeID(uint64(i)*0x9E3779B97F4A7C15),
-			guid.WithClock(ticker(drift, i)),
-		)
+		clock := guid.Clock.WithDrift(drift).WithNodeID(uint64(i) * 0x9E3779B97F4A7C15).WithClock(ticker(drift, i))
 		uids = append(uids, guid.NewX(clock), guid.NewX(clock), guid.NewX(clock), guid.NewX(clock))
 	}
 

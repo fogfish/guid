@@ -70,7 +70,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	clock := guid.NewClock(location())
+	clock := location()
 
 	// the configuration goes to stderr so that stdout carries identifiers and
 	// nothing else, and the pipeline stays usable
@@ -143,7 +143,7 @@ func allocator() (kind, error) {
 // like any other, and one an operator assigning them by hand would reach for
 // first — so the question is which flags were actually seen on the command
 // line.
-func location() guid.Config {
+func location() guid.Chronos {
 	given := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "n" {
@@ -152,10 +152,10 @@ func location() guid.Config {
 	})
 
 	if given {
-		return guid.WithNodeID(*node)
+		return guid.Clock.WithNodeID(*node)
 	}
 
-	return guid.WithNodeRandom()
+	return guid.Clock.WithNodeRandom()
 }
 
 // sleep waits a random interval in (0, max], and not at all for a max of zero.
