@@ -144,6 +144,12 @@ func TestDecodeKeepsDestinationOnError(t *testing.T) {
 	g, l, x := guid.NewG(c), guid.NewL(c), guid.NewX(c)
 	wg, wl, wx := g, l, x
 
+	// a wrong-version payload of otherwise-valid length and shape
+	wrongVersion := x.Bytes()
+	wrongVersion[6] = (wrongVersion[6] &^ 0xf0) | (0x7 << 4)
+	var wrongVersionX guid.X
+	copy(wrongVersionX[:], wrongVersion)
+
 	it.Then(t).ShouldNot(
 		it.Nil(wg.FromString("xxxxxx")),
 		it.Nil(wg.FromBytes([]byte("xx"))),
@@ -156,6 +162,10 @@ func TestDecodeKeepsDestinationOnError(t *testing.T) {
 		it.Nil(wx.FromString("06377f2a-0cb8-7a3f-b000-0000000003e9")),
 		it.Nil(wx.FromBytes([]byte("xx"))),
 		it.Nil(wx.FromBase62("......")),
+		// FromBytes and FromBase62 build the same in-memory value FromString
+		// does, so the version/variant guardrail applies to them equally
+		it.Nil(wx.FromBytes(wrongVersion)),
+		it.Nil(wx.FromBase62(wrongVersionX.Base62())),
 	).Should(
 		it.Equal(wg, g),
 		it.Equal(wl, l),

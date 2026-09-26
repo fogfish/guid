@@ -595,6 +595,24 @@ func TestLexSortingBase62(t *testing.T) {
 	)
 }
 
+// Base62 is a positional numeral system: a value one digit narrower than its
+// neighbor should compare smaller, but stripping the leading zero digits
+// before returning the string makes it *shorter* instead, and a shorter
+// string sorts before a longer one with the same prefix regardless of digit
+// value. The 61 -> 62 boundary crosses from a one-digit encoding ("z") to a
+// two-digit one ("10"), and "10" < "z" in ASCII even though 62 > 61: the
+// numeric and lexicographic orders disagree. Base62 has to be a fixed width
+// per type, zero-padded, for lexicographic order to track numeric order.
+func TestBase62FixedWidthPreservesOrder(t *testing.T) {
+	a := guid.L(61)
+	b := guid.L(62)
+
+	it.Then(t).Should(
+		it.Equal(len(a.Base62()), len(b.Base62())),
+		it.Less(a.Base62(), b.Base62()),
+	)
+}
+
 // G is stored in the representation its order is defined in, memcmp over the
 // raw bytes is therefore a valid comparator.
 func TestMemcmpOrdering(t *testing.T) {

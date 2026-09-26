@@ -72,10 +72,10 @@ func gFromL(clock guid.Chronos, val guid.L) guid.G {
 	return uid
 }
 
-func gFromX(val guid.X) guid.G {
+func gFromX(val guid.X) (guid.G, error) {
 	var uid guid.G
-	uid.FromX(val)
-	return uid
+	err := uid.FromX(val)
+	return uid, err
 }
 
 func fromStringL(val string) (guid.L, error) {

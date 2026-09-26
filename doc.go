@@ -223,13 +223,15 @@ is a G.
 Casts work the same way and read in the direction of the assignment:
 
 	g.FromL(clock, l)   // 64-bit  -> 96-bit,  stamps the ⟨𝒍⟩ fraction
-	g.FromX(x)          // 128-bit -> 96-bit,  truncates ⟨𝒍⟩ to 32 bits
+	err := g.FromX(x)   // 128-bit -> 96-bit,  truncates ⟨𝒍⟩ to 32 bits
 	l.FromG(g)          // drops ⟨𝒍⟩
 	l.FromX(x)          // drops ⟨𝒍⟩
 	x.FromG(g)          // 96-bit  -> 128-bit, ⟨𝒍⟩ keeps the 32 bits it had
 	x.FromL(clock, l)   // 64-bit  -> 128-bit, stamps the ⟨𝒍⟩ fraction
 
-All six preserve the ⟨𝒕,𝒔⟩ fraction exactly.
+All six preserve the ⟨𝒕,𝒔⟩ fraction exactly. FromX is the one that can fail:
+a node identity wider than 32 bits has no G to land on, so the cast returns an
+error rather than silently colliding two nodes onto the same value.
 
 A decoder that returns an error leaves the destination unchanged, so a value
 that was already there survives a failed decode rather than being half
