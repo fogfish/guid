@@ -106,11 +106,11 @@ A fixed size of 96-bit is used to implement identity schema
    ⟨𝒅⟩        ⟨𝒕⟩                ⟨𝒍⟩         ⟨𝒕⟩     ⟨𝒔⟩
 ```
 
-↣ ⟨𝒕⟩ is 47-bit UTC timestamp with a resolution of 131 µs — one tick is 2¹⁷ ns. It is derived from the nanosecond UNIX timestamp by shifting it right by 17 bits (`time.Now().UnixNano() >> 17`). The field spans 2⁴⁷ ticks of 2¹⁷ ns — 2⁶⁴ ns, about 584 years — so measured from the UNIX epoch it runs to the year 2555. The effective ceiling is earlier and comes from Go rather than from the schema: `UnixNano` is undefined beyond 2262, so ⟨𝒕⟩ never uses more than 46 of its 47 bits. A deployment that needs a different time base supplies its own ticker with `guid.WithClock(...)`, which also gives that clock a private ⟨𝒕,𝒔⟩ sequence.
+↣ ⟨𝒕⟩ is 47-bit UTC timestamp with a resolution of 131 µs — one tick is 2¹⁷ ns. It is derived from the nanosecond UNIX timestamp by shifting it right by 17 bits (`time.Now().UnixNano() >> 17`). The field spans 2⁴⁷ ticks of 2¹⁷ ns — 2⁶⁴ ns, about 584 years — so measured from the UNIX epoch it runs to the year 2555. The effective ceiling is earlier and comes from Go rather than from the schema: `UnixNano` is undefined beyond 2262, so ⟨𝒕⟩ never uses more than 46 of its 47 bits. A deployment that needs a different time base supplies its own ticker with `guid.NewClock(guid.Clock, guid.WithClock(...))` (or seed from `guid.Unclock` for a descending one), which also gives that clock a private ⟨𝒕,𝒔⟩ sequence.
 
 ↣ ⟨𝒍⟩ is 32-bits node/allocator identifier. It is allocated randomly to each node using cryptographic random generator or application provided value. The node identity has higher sorting priority than the low bits of the timestamp, which is what makes each allocator's output a contiguous, exactly ordered run of the key space. The random allocation give an application ability to introduce about 65K allocators before it meets a high probability of collisions.
 
-> If ⟨𝒍⟩ is meant to carry topology, assign it rather than randomize it. `guid.WithNodeRandom` — the default — gives distinct allocators, but random identities sort arbitrarily, so adjacent ring positions land far apart. Derive ⟨𝒍⟩ from the ring position with `guid.WithNodeID(...)` when you want the sort order to follow the topology.
+> If ⟨𝒍⟩ is meant to carry topology, assign it rather than randomize it. `guid.Clock`/`guid.Unclock` already carry `CONFIG_GUID_NODE_ID` when a deployment sets it, a random ⟨𝒍⟩ otherwise — distinct allocators either way, but neither one follows topology: a random identity sorts arbitrarily, and an env-provided one is typically fixed per process rather than derived from ring position. Derive ⟨𝒍⟩ from the ring position with `guid.NewClock(guid.Clock, guid.WithNodeID(...))` when you want the sort order to follow the topology.
 
 ↣ ⟨𝒅⟩ is 3 drift bits defines the width Δ of the window inside which ⟨𝒍⟩ outranks time. It shows the value of less important faction of time. The code selects a rung of an eight step ladder that runs from 131 µs to 39 hours, configured on the clock with `guid.WithDrift(...)` and defaulting to about 4.5 minutes.
 
@@ -136,15 +136,23 @@ The same number is also the clock disagreement the ordering tolerates, which is 
 The drift must be the same for every value of a keyspace — ⟨𝒅⟩ is the most significant faction, so values allocated with different drift are segregated rather than interleaved. This is why it is a property of the clock and not an argument of `NewG` / `NewL`.
 
 ```go
-clock := guid.NewClock(guid.WithDrift(guid.Drift17s))
+clock := guid.NewClock(guid.Clock, guid.WithDrift(guid.Drift17s))
 
 // guid.DriftOf picks the smallest rung that covers a failover budget
-clock := guid.NewClock(guid.WithDrift(guid.DriftOf(45 * time.Second)))
+clock := guid.NewClock(guid.Clock, guid.WithDrift(guid.DriftOf(45 * time.Second)))
 ```
 
 ↣ ⟨𝒔⟩ is 14-bit of monotonic strictly locally ordered integer. It helps to avoid collisions when multiple events happen during a single tick of ⟨𝒕⟩ — 131 µs — or when the clock is set backwards. The 14-bit value allows about 16K allocations per tick, a ceiling of 1.25·10⁸ per second per process. Read that as the saturation point rather than as a throughput figure: it is about the cost of the atomic increment itself, so a process cannot approach it while doing anything with the identifiers it allocates, and crossing it produces run-ahead rather than collisions — ⟨𝒕⟩ advances past the wall clock and the gap closes on its own once the burst ends. [§3.6 of the proof](doc/proof.md) has the rates.
 
-The sequence is **process-wide**, not per-allocator: every clock built on the default ticker shares one, so values allocated across several instances of `Chronos` in a process stay unique and each stays exactly ordered (`guid.WithClock` is the exception — a custom ticker gets a private sequence). It is *not* unique between processes and is not what makes identifiers globally unique: two processes allocating in the same tick produce the same ⟨𝒕,𝒔⟩, and it is ⟨𝒍⟩ that keeps their identifiers apart. Within one process the implementation ensures that the same integer is not returned more than once. Restart of the process resets the sequence.
+The sequence is **process-wide**, not per-allocator: `guid.Clock` and `guid.Unclock` each bind to one, so values allocated across several instances of `Chronos` derived from either stay unique and each stays exactly ordered (`WithClock` is the exception — a custom ticker gets a private sequence, and so do `WithSeed`/`WithCheckpoint`, below). It is *not* unique between processes and is not what makes identifiers globally unique: two processes allocating in the same tick produce the same ⟨𝒕,𝒔⟩, and it is ⟨𝒍⟩ that keeps their identifiers apart. Within one process the implementation ensures that the same integer is not returned more than once.
+
+Restart of the process resets the sequence to zero, which is safe on its own but stops mattering only as long as the wall clock keeps moving forward: a restart that coincides with the clock reading *behind* where the previous process left off — almost always an NTP step correction, not a DST change, since ⟨𝒕⟩ is UnixNano and DST never touches it — can make the new process hand out values that sort before ones the old process already issued. `guid.WithCheckpoint(...)` reports the sequence's high water mark to a channel the application persists on its own schedule (a file, a KV store, a row of whatever the identifiers are written into); `guid.WithSeed(...)` restores it on the next start:
+
+```go
+hardened := guid.NewClock(guid.Clock, guid.WithSeed(restored), guid.WithCheckpoint(2*time.Second, ch))
+```
+
+Both give the result its own private sequence rather than reaching back into the one `guid.Clock`/`guid.Unclock` share, so deriving a hardened clock this way never changes how any other clock built from the same seed behaves. Pairing a stable ⟨𝒍⟩ (`WithNodeID`/`WithNodeFromEnv`, not `WithNodeRandom`) with a large enough `Drift` and, at the OS level, an NTP daemon configured to slew rather than step the clock, reduces how often this matters in the first place.
 
 ⟨𝒕⟩ and ⟨𝒔⟩ are allocated together, as a single atomic step, so that the pair ⟨𝒕,𝒔⟩ strictly increases with every allocation. ⟨𝒔⟩ counts within one tick of ⟨𝒕⟩ and restarts when the clock ticks; an allocator that exhausts a tick carries into the next one rather than folding ⟨𝒔⟩ back to zero. This makes values allocated by a single process ordered exactly as they were allocated — at any allocation rate, and even across a clock that is stepped backwards, where ⟨𝒕⟩ holds its high water mark until real time catches up. A process that saturates the allocator — a loop that allocates and discards, nothing else — makes ⟨𝒕⟩ run ahead of the wall clock; the ordering is unaffected and the gap closes on its own once the loop stops. [§3.6 of the proof](doc/proof.md) derives the rates, for readers who need `Time` to track real time under synthetic load.
 
@@ -309,9 +317,7 @@ func useDefaultClock() {
 }
 
 func useCustomClock() {
-  clock := guid.NewClock(
-    guid.WithNodeID(0xffffffff),
-  )
+  clock := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff))
 
   c := guid.NewG(clock)
   time.Sleep(1 * time.Second)

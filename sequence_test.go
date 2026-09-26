@@ -38,10 +38,7 @@ const cycle = 1 << 14
 // and allocates a value that sorts before its predecessor. The sequence carries
 // into the next tick instead.
 func TestSeqCarry(t *testing.T) {
-	c := guid.NewClock(
-		guid.WithNodeID(0x1),
-		guid.WithClock(func() uint64 { return 1 << 20 }),
-	)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return 1 << 20 }))
 
 	seen := make(map[guid.L]bool, 3*cycle)
 	last := guid.NewL(c)
@@ -76,10 +73,7 @@ func TestSeqCarry(t *testing.T) {
 
 // TestSeqCarryG is TestSeqCarry for globally unique values
 func TestSeqCarryG(t *testing.T) {
-	c := guid.NewClock(
-		guid.WithNodeID(0xffffffff),
-		guid.WithClock(func() uint64 { return 1 << 20 }),
-	)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0xffffffff), guid.WithClock(func() uint64 { return 1 << 20 }))
 
 	last := guid.NewG(c)
 	inv, drift := 0, 0
@@ -106,10 +100,7 @@ func TestSeqCarryG(t *testing.T) {
 // its high water mark until real time catches up.
 func TestSeqBackwards(t *testing.T) {
 	now := uint64(1 << 40)
-	c := guid.NewClock(
-		guid.WithNodeID(0x1),
-		guid.WithClock(func() uint64 { return atomic.LoadUint64(&now) }),
-	)
+	c := guid.NewClock(guid.Clock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return atomic.LoadUint64(&now) }))
 
 	last := guid.NewL(c)
 	inv := 0
@@ -137,10 +128,7 @@ func TestSeqBackwards(t *testing.T) {
 // TestSeqDescending is TestSeqCarry for a clock that runs backwards, where
 // values allocated later sort before their predecessors.
 func TestSeqDescending(t *testing.T) {
-	c := guid.NewClock(
-		guid.WithNodeID(0x1),
-		guid.WithClockDescending(func() uint64 { return 1 << 40 }),
-	)
+	c := guid.NewClock(guid.Unclock, guid.WithNodeID(0x1), guid.WithClock(func() uint64 { return 1 << 40 }))
 
 	last := guid.NewL(c)
 	inv := 0
@@ -160,7 +148,7 @@ func TestSeqDescending(t *testing.T) {
 
 // TestSeqInverse checks the built-in inverse clock over a live timestamp
 func TestSeqInverse(t *testing.T) {
-	c := guid.NewClock(guid.WithClockInverse())
+	c := guid.Unclock
 
 	last := guid.NewL(c)
 	inv := 0
@@ -228,8 +216,8 @@ func TestSeqConcurrent(t *testing.T) {
 // TestSeqShared checks that clocks of one time domain share a sequence, so that
 // values allocated through distinct instances of Chronos do not collide.
 func TestSeqShared(t *testing.T) {
-	a := guid.NewClock(guid.WithClockUnix())
-	b := guid.NewClock(guid.WithClockUnix())
+	a := guid.Clock
+	b := guid.Clock
 
 	it.Then(t).ShouldNot(
 		it.Equal(guid.NewL(a), guid.NewL(b)),
