@@ -70,7 +70,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	clock := guid.NewClock(location())
+	clock := clock()
 
 	// the configuration goes to stderr so that stdout carries identifiers and
 	// nothing else, and the pipeline stays usable
@@ -137,13 +137,13 @@ func allocator() (kind, error) {
 	}
 }
 
-// location configures ⟨𝒍⟩ from -n, or leaves it random when the flag is absent.
+// clock configures ⟨𝒍⟩ from -n, or leaves it random when the flag is absent.
 //
 // The flag's zero value cannot stand for "not given" — 0 is a node identity
 // like any other, and one an operator assigning them by hand would reach for
 // first — so the question is which flags were actually seen on the command
 // line.
-func location() guid.Config {
+func clock() guid.Chronos {
 	given := false
 	flag.Visit(func(f *flag.Flag) {
 		if f.Name == "n" {
@@ -152,10 +152,10 @@ func location() guid.Config {
 	})
 
 	if given {
-		return guid.WithNodeID(*node)
+		return guid.NewClock(guid.Clock, guid.WithNodeID(*node))
 	}
 
-	return guid.WithNodeRandom()
+	return guid.NewClock(guid.Clock, guid.WithNodeRandom())
 }
 
 // sleep waits a random interval in (0, max], and not at all for a max of zero.

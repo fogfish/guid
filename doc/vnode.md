@@ -167,7 +167,7 @@ down to the width of the field first:
 
 ```go
 // 64-bit ring token, 96-bit identifiers
-clock := guid.NewClock(
+clock := guid.NewClock(guid.Clock,
     guid.WithNodeID(token>>32),
     guid.WithDrift(guid.DriftOf(90*time.Second)),
 )
@@ -281,7 +281,7 @@ per actor:
 ```go
 hw := storedHighWater(actor) + 1<<17 // one tick above, see below
 
-clock := guid.NewClock(
+clock := guid.NewClock(guid.Clock,
     guid.WithNodeID(token>>32),
     guid.WithDrift(drift),
     guid.WithClock(func() uint64 {

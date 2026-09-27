@@ -115,6 +115,20 @@ func descending() *sequence {
 	return seq
 }
 
+// seed sets 𝑽 to v, as if v had already been allocated, so the next call to
+// next or prev continues strictly beyond it instead of from the sequence's
+// zero-value start. It is ClockBuilder.WithSeed's mechanism: v is normally a
+// value a prior process reported through WithCheckpoint, restoring the
+// ratchet's high water mark across a restart that would otherwise drop it.
+//
+// seed must only be called before the sequence is handed to any allocator —
+// ClockBuilder.Build is the only caller, before it returns the Chronos — so a
+// plain store is enough, no concurrent access is possible yet.
+func (seq *sequence) seed(v uint64) {
+	seq.tick.Store(v)
+	seq.v.Store(v)
+}
+
 // Process wide ⟨𝒕,𝒔⟩ sequences. Every clock of the same time domain shares one,
 // so that values allocated by distinct instances of Chronos within the process
 // remain unique and ordered.
